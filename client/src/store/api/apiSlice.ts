@@ -106,7 +106,7 @@ export const api = createApi({
               vendors { ${VENDOR_FIELDS} }
             }
           `);
-          return { data: data.vendors };
+          return { data: Array.isArray(data.vendors) ? data.vendors : [] };
         } catch (error) {
           return { error: { message: (error as Error).message } };
         }

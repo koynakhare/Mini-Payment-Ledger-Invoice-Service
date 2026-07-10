@@ -4,6 +4,7 @@ import cors from 'cors';
 import express from 'express';
 import { getDb } from './db/connection.js';
 import { runMigrations } from './db/migrations.js';
+import { seedIfEmpty } from './db/seed.js';
 import { resolvers } from './graphql/resolvers.js';
 import { typeDefs } from './graphql/schema.js';
 import { systemAccountService } from './services/index.js';
@@ -16,6 +17,7 @@ const invoicePdfService = new InvoicePdfService();
 async function startServer(): Promise<void> {
   getDb();
   runMigrations();
+  seedIfEmpty();
   systemAccountService.ensureCompanyBankAccount();
   systemAccountService.ensureExpenseAccount();
 

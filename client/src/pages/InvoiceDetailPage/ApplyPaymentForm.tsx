@@ -1,16 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  Button,
-  Card,
-  CardContent,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Box, Button, Card, CardContent, Stack, Typography } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
 import {
   CURRENCY_CONFIG,
@@ -18,6 +7,7 @@ import {
   CURRENCY_SYMBOLS,
   type CurrencyCode,
 } from '../../constants/currency';
+import { FormField, useFormState, type FormFieldConfig } from '../../components/form';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useApplyPaymentMutation } from '../../store/api';
@@ -35,36 +25,75 @@ interface ApplyPaymentFormProps {
   invoice: Invoice;
 }
 
+const buildInitialValues = (currency: CurrencyCode) => ({
+  paymentAmount: '',
+  paymentCurrency: currency,
+});
+
 export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
   const [applyPayment, { isLoading: paying }] = useApplyPaymentMutation();
   const { showToast } = useToast();
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentCurrency, setPaymentCurrency] = useState<CurrencyCode>(
-    invoice.currency
+  const { values, errors, updateValue, setFieldError } = useFormState(
+    buildInitialValues(invoice.currency)
   );
   const [paymentError, setPaymentError] = useState('');
 
-  const convertedPreviewCents = useMemo(() => {
-    const amountCents = parseAmountToCents(paymentAmount);
-    if (amountCents <= 0) return 0;
-    return convertCurrency(amountCents, paymentCurrency, invoice.currency);
-  }, [paymentAmount, paymentCurrency, invoice.currency]);
+  const paymentCurrency = values.paymentCurrency as CurrencyCode;
+  const amountCents = parseAmountToCents(values.paymentAmount);
+  const convertedPreviewCents =
+    amountCents > 0 ? convertCurrency(amountCents, paymentCurrency, invoice.currency) : 0;
+  const showConversionPreview =
+    paymentCurrency !== invoice.currency && convertedPreviewCents > 0;
+
+  const fields = useMemo<FormFieldConfig[]>(() => {
+    const fieldError = paymentError || errors.paymentAmount;
+    return [
+      {
+        type: 'text',
+        name: 'paymentAmount',
+        label: `Amount (${CURRENCY_SYMBOLS[paymentCurrency]})`,
+        placeholder: (invoice.remainingCents / 100).toFixed(2),
+        error: fieldError,
+        helperText:
+          fieldError ||
+          (showConversionPreview
+            ? `≈ ${formatCents(convertedPreviewCents, invoice.currency)} applied to invoice`
+            : ' '),
+      },
+      {
+        type: 'select',
+        name: 'paymentCurrency',
+        label: 'Currency',
+        minWidth: 140,
+        options: CURRENCY_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.value,
+        })),
+      },
+    ];
+  }, [
+    convertedPreviewCents,
+    errors.paymentAmount,
+    invoice.currency,
+    invoice.remainingCents,
+    paymentCurrency,
+    paymentError,
+    showConversionPreview,
+  ]);
+
+  const handleChange = (name: string, value: string) => {
+    setPaymentError('');
+    updateValue(name as keyof typeof values, value);
+  };
 
   const handlePay = async () => {
     setPaymentError('');
-    const amountCents = parseAmountToCents(paymentAmount);
     if (amountCents <= 0) {
       setPaymentError('Enter a valid payment amount');
       return;
     }
 
-    const convertedAmountCents = convertCurrency(
-      amountCents,
-      paymentCurrency,
-      invoice.currency
-    );
-
-    if (convertedAmountCents > invoice.remainingCents) {
+    if (convertedPreviewCents > invoice.remainingCents) {
       setPaymentError(
         `Amount exceeds remaining balance of ${formatCents(invoice.remainingCents, invoice.currency)}`
       );
@@ -79,16 +108,14 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
         idempotencyKey: generateIdempotencyKey('pay'),
       }).unwrap();
       showToast('Payment applied successfully.', 'success');
-      setPaymentAmount('');
+      updateValue('paymentAmount', '');
     } catch (err) {
       const msg = getErrorMessage(err);
       setPaymentError(msg);
+      setFieldError('paymentAmount', msg);
       showToast(msg, 'error');
     }
   };
-
-  const showConversionPreview =
-    paymentCurrency !== invoice.currency && convertedPreviewCents > 0;
 
   return (
     <Card
@@ -113,46 +140,24 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
           />
           . Overpayment is rejected automatically.
         </Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
-          <TextField
-            label={`Amount (${CURRENCY_SYMBOLS[paymentCurrency]})`}
-            value={paymentAmount}
-            onChange={(e) => {
-              setPaymentAmount(e.target.value);
-              setPaymentError('');
-            }}
-            placeholder={(invoice.remainingCents / 100).toFixed(2)}
-            error={!!paymentError}
-            helperText={
-              paymentError ||
-              (showConversionPreview
-                ? `≈ ${formatCents(convertedPreviewCents, invoice.currency)} applied to invoice`
-                : ' ')
-            }
-            fullWidth
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start" sx={{ width: '100%' }}>
+          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+            <FormField
+              field={fields[0]}
+              value={values.paymentAmount}
+              onChange={(value) => handleChange('paymentAmount', value)}
+            />
+          </Box>
+          <FormField
+            field={fields[1]}
+            value={values.paymentCurrency}
+            onChange={(value) => handleChange('paymentCurrency', value)}
           />
-          <FormControl sx={{ minWidth: { sm: 140 } }} fullWidth>
-            <InputLabel>Currency</InputLabel>
-            <Select
-              value={paymentCurrency}
-              label="Currency"
-              onChange={(e) => {
-                setPaymentCurrency(e.target.value as CurrencyCode);
-                setPaymentError('');
-              }}
-            >
-              {CURRENCY_OPTIONS.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.value}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
           <Button
             variant="contained"
             startIcon={<PaymentIcon />}
             onClick={handlePay}
-            disabled={paying || !paymentAmount}
+            disabled={paying || !values.paymentAmount}
             sx={{
               minWidth: 160,
               background: tokens.color.accentGradient,

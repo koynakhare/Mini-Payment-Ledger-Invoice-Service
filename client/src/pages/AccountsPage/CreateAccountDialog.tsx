@@ -1,23 +1,8 @@
-import { useState } from 'react';
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  TextField,
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
+import { useMemo, useState } from 'react';
 import isEmpty from 'lodash/isEmpty.js';
 import trim from 'lodash/trim.js';
 import { ACCOUNT_TYPE_OPTIONS, ACCOUNT_TYPES } from '../../constants';
+import { AppDialog, FormFields, useFormState, type FormFieldConfig } from '../../components/form';
 import { useCreateAccountMutation } from '../../store/api';
 import { useToast } from '../../components/ui/ToastProvider';
 import type { AccountType } from '../../types';
@@ -28,102 +13,93 @@ interface CreateAccountDialogProps {
   onClose: () => void;
 }
 
+const INITIAL_VALUES = {
+  name: '',
+  accountType: ACCOUNT_TYPES.VENDOR_PAYABLE,
+};
+
 export function CreateAccountDialog({ open, onClose }: CreateAccountDialogProps) {
   const [createAccount, { isLoading }] = useCreateAccountMutation();
   const { showToast } = useToast();
-  const [name, setName] = useState('');
-  const [accountType, setAccountType] = useState<AccountType>(ACCOUNT_TYPES.VENDOR_PAYABLE);
-  const [error, setError] = useState('');
+  const { values, errors, updateValue, setFieldError, reset, getValue } = useFormState(INITIAL_VALUES);
+  const [submitError, setSubmitError] = useState('');
 
-  const resetForm = () => {
-    setName('');
-    setAccountType(ACCOUNT_TYPES.VENDOR_PAYABLE);
-    setError('');
+  const fields = useMemo<FormFieldConfig[]>(
+    () => [
+      {
+        type: 'text',
+        name: 'name',
+        label: 'Account Name',
+        autoFocus: true,
+      },
+      {
+        type: 'select',
+        name: 'accountType',
+        label: 'Type',
+        options: ACCOUNT_TYPE_OPTIONS.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })),
+      },
+    ],
+    []
+  );
+
+  const handleChange = (name: string, value: string) => {
+    setSubmitError('');
+    updateValue(name as keyof typeof INITIAL_VALUES, value);
   };
 
   const handleClose = () => {
-    resetForm();
+    reset();
+    setSubmitError('');
     onClose();
   };
 
   const handleSubmit = async () => {
-    setError('');
-    const trimmedName = trim(name);
+    setSubmitError('');
+    const trimmedName = trim(getValue('name'));
     if (isEmpty(trimmedName)) {
-      setError('Account name is required');
+      setFieldError('name', 'Account name is required');
       return;
     }
 
     try {
       const result = await createAccount({
         name: trimmedName,
-        accountType,
+        accountType: getValue('accountType') as AccountType,
       }).unwrap();
 
       if (result.error) {
-        setError(result.error);
+        setSubmitError(result.error);
         return;
       }
 
       showToast('Account created', 'success');
-      resetForm();
+      reset();
       onClose();
     } catch (err) {
-      setError(getErrorMessage(err));
+      setSubmitError(getErrorMessage(err));
     }
   };
 
-  const canSubmit = !isEmpty(trim(name));
+  const canSubmit = !isEmpty(trim(getValue('name')));
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ pr: 6 }}>
-        Add Account
-        <IconButton
-          aria-label="Close"
-          onClick={handleClose}
-          sx={{ position: 'absolute', right: 12, top: 12 }}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent>
-        <Stack spacing={2.5} sx={{ pt: 0.5 }}>
-          {error ? <Alert severity="error">{error}</Alert> : null}
-          <TextField
-            label="Account Name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setError('');
-            }}
-            fullWidth
-            autoFocus
-          />
-          <FormControl fullWidth>
-            <InputLabel>Type</InputLabel>
-            <Select
-              value={accountType}
-              label="Type"
-              onChange={(e) => setAccountType(e.target.value as AccountType)}
-            >
-              {ACCOUNT_TYPE_OPTIONS.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={handleClose} disabled={isLoading}>
-          Cancel
-        </Button>
-        <Button variant="contained" onClick={handleSubmit} disabled={isLoading || !canSubmit}>
-          {isLoading ? 'Creating…' : 'Create'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <AppDialog
+      open={open}
+      onClose={handleClose}
+      title="Add Account"
+      showCloseButton
+      maxWidth="xs"
+      error={submitError || undefined}
+      confirmLabel="Create"
+      confirmLoadingLabel="Creating"
+      onConfirm={handleSubmit}
+      confirmDisabled={isLoading || !canSubmit}
+      confirmLoading={isLoading}
+    >
+      <FormFields fields={fields} values={values} errors={errors} onChange={handleChange} />
+    </AppDialog>
   );
 }

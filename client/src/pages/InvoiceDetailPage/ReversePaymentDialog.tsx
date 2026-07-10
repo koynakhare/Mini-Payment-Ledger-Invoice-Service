@@ -1,14 +1,6 @@
-import { useState } from 'react';
-import {
-  Alert,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { useMemo, useState } from 'react';
+import { Typography } from '@mui/material';
+import { AppDialog, FormFields, useFormState, type FormFieldConfig } from '../../components/form';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { useToast } from '../../components/ui/ToastProvider';
 import { useReversePaymentMutation } from '../../store/api';
@@ -24,6 +16,10 @@ interface ReversePaymentDialogProps {
   onClose: () => void;
 }
 
+const INITIAL_VALUES = {
+  reason: '',
+};
+
 export function ReversePaymentDialog({
   open,
   payment,
@@ -33,11 +29,25 @@ export function ReversePaymentDialog({
 }: ReversePaymentDialogProps) {
   const [reversePayment, { isLoading: reversing }] = useReversePaymentMutation();
   const { showToast } = useToast();
-  const [reason, setReason] = useState('');
+  const { values, updateValue, reset } = useFormState(INITIAL_VALUES);
   const [error, setError] = useState('');
 
+  const fields = useMemo<FormFieldConfig[]>(
+    () => [
+      {
+        type: 'text',
+        name: 'reason',
+        label: 'Reason',
+        multiline: true,
+        rows: 2,
+        helperText: 'Optional — for internal audit trail',
+      },
+    ],
+    []
+  );
+
   const handleClose = () => {
-    setReason('');
+    reset();
     setError('');
     onClose();
   };
@@ -50,7 +60,7 @@ export function ReversePaymentDialog({
         paymentId: payment.id,
         reversalType,
         idempotencyKey: generateIdempotencyKey(reversalType),
-        reason: reason || undefined,
+        reason: values.reason || undefined,
       }).unwrap();
       showToast(reversalType === 'void' ? 'Payment voided.' : 'Refund processed.', 'success');
       handleClose();
@@ -62,48 +72,42 @@ export function ReversePaymentDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        {reversalType === 'void' ? 'Void Payment' : 'Refund Payment'}
-      </DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" sx={{ mb: 2 }}>
-          {reversalType === 'void'
-            ? 'Creates an internal correcting reversal. The original payment is preserved for audit.'
-            : 'Creates a reversing double-entry transaction. The original payment is never deleted.'}
-        </Typography>
-        {payment ? (
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            Amount:{' '}
-            <MoneyAmount
-              cents={payment.netAmountCents}
-              currency={invoiceCurrency}
-              component="span"
-            />
+    <AppDialog
+      open={open}
+      onClose={handleClose}
+      title={reversalType === 'void' ? 'Void Payment' : 'Refund Payment'}
+      description={
+        <>
+          <Typography variant="body2">
+            {reversalType === 'void'
+              ? 'Creates an internal correcting reversal. The original payment is preserved for audit.'
+              : 'Creates a reversing double-entry transaction. The original payment is never deleted.'}
           </Typography>
-        ) : null}
-        {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
-        <TextField
-          label="Reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          fullWidth
-          multiline
-          rows={2}
-          helperText="Optional — for internal audit trail"
-        />
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button
-          variant="contained"
-          color={reversalType === 'void' ? 'warning' : 'primary'}
-          onClick={handleConfirm}
-          disabled={reversing}
-        >
-          {reversing ? 'Processing…' : 'Confirm'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+          {payment ? (
+            <Typography variant="body2">
+              Amount:{' '}
+              <MoneyAmount
+                cents={payment.netAmountCents}
+                currency={invoiceCurrency}
+                component="span"
+              />
+            </Typography>
+          ) : null}
+        </>
+      }
+      error={error || undefined}
+      confirmLabel="Confirm"
+      confirmLoadingLabel="Processing"
+      confirmColor={reversalType === 'void' ? 'warning' : 'primary'}
+      onConfirm={handleConfirm}
+      confirmLoading={reversing}
+    >
+      <FormFields
+        fields={fields}
+        values={values}
+        onChange={(name, value) => updateValue(name as keyof typeof INITIAL_VALUES, value)}
+        spacing={0}
+      />
+    </AppDialog>
   );
 }

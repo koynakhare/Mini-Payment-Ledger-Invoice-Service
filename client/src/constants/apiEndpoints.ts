@@ -1,4 +1,4 @@
-export const GRAPHQL_BASE_URL = import.meta.env.VITE_GRAPHQL_URL ?? 'https://mini-payment-ledger-invoice-service-1.onrender.com/graphql';
+export const GRAPHQL_BASE_URL = import.meta.env.VITE_GRAPHQL_URL ?? '/graphql';
 
 export const GRAPHQL_OPERATIONS = {
   QUERIES: {

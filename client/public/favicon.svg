@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="TMS Payables">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F2B4A" />
+      <stop offset="55%" stop-color="#0D5C7A" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#bg)" />
+  <g fill="#FFFFFF" transform="translate(5 8)">
+    <path d="M0 9.5V5.5C0 4.67.67 4 1.5 4H10l3 3h5.5c.83 0 1.5.67 1.5 1.5V12h1.2c.66 0 1.2.54 1.2 1.2v2.1c0 .66-.54 1.2-1.2 1.2H20a2.8 2.8 0 0 1-5.6 0H8.6a2.8 2.8 0 0 1-5.6 0H2.2C1.54 16.5 1 15.96 1 15.3v-4.3c0-.55.45-1 1-1H0zM17.2 14.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4zM5.8 14.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z" />
+    <rect x="2" y="6" width="7" height="4" rx="0.5" opacity="0.92" />
+  </g>
+</svg>

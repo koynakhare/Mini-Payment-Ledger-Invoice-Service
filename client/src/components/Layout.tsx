@@ -17,11 +17,9 @@ import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
-import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthProvider';
 import { LAYOUT, NAV_ITEMS } from '../constants';
 import { ROUTE_PATHS } from '../routes/routePaths';
 import { tokens } from '../theme/tokens';
@@ -44,7 +42,6 @@ export function Layout() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { isConfigured, user, signOut } = useAuth();
 
   const isActive = (path: string) =>
     path === ROUTE_PATHS.DASHBOARD
@@ -53,12 +50,6 @@ export function Layout() {
 
   const handleNavigate = (path: string) => {
     navigate(path);
-    setMobileOpen(false);
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    navigate(ROUTE_PATHS.LOGIN);
     setMobileOpen(false);
   };
 
@@ -150,39 +141,6 @@ export function Layout() {
       </List>
 
       <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-        {isConfigured && user ? (
-          <Box sx={{ mb: 1.5 }}>
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block',
-                color: 'rgba(255,255,255,0.5)',
-                mb: 0.5,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {user.email}
-            </Typography>
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<LogoutOutlinedIcon />}
-              onClick={handleSignOut}
-              sx={{
-                color: 'rgba(255,255,255,0.85)',
-                borderColor: 'rgba(255,255,255,0.2)',
-                '&:hover': {
-                  borderColor: 'rgba(255,255,255,0.35)',
-                  bgcolor: 'rgba(255,255,255,0.06)',
-                },
-              }}
-            >
-              Sign Out
-            </Button>
-          </Box>
-        ) : null}
         <Button
           fullWidth
           variant="contained"

@@ -1,12 +1,6 @@
 import { GRAPHQL_BASE_URL } from '../../constants/apiEndpoints';
 import { ApiError, parseGraphQLErrors, parseHttpError } from './errors';
 
-let accessTokenGetter: (() => string | null) | null = null;
-
-export function setAccessTokenGetter(getter: () => string | null): void {
-  accessTokenGetter = getter;
-}
-
 export interface GraphQLResponse<T> {
   data?: T;
   errors?: Array<{
@@ -22,15 +16,9 @@ export async function graphqlRequest<T>(
   let response: Response;
 
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const accessToken = accessTokenGetter?.();
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
-    }
-
     response = await fetch(GRAPHQL_BASE_URL, {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables }),
     });
   } catch {

@@ -98,10 +98,6 @@ Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue 
 | `DATABASE_PATH` | `./data/ledger.db` | SQLite file (local dev only — **data is lost on redeploy**) |
 | `DATABASE_URL` | — | **PostgreSQL connection string (Supabase) — use in production for persistent data** |
 | `VITE_GRAPHQL_URL` | `/graphql` | Frontend GraphQL endpoint |
-| `VITE_SUPABASE_URL` | — | Supabase project URL (optional — enables client login) |
-| `VITE_SUPABASE_ANON_KEY` | — | Supabase anon/public key |
-| `SUPABASE_URL` | — | Supabase project URL (optional — server JWT validation) |
-| `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (server only) |
 
 ### Persistent database with Supabase (recommended for deploy)
 
@@ -118,19 +114,6 @@ SQLite stores data in a local file. On Render, Railway, Vercel, and similar host
 
 For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as before.
 
-### Optional: Supabase Auth
-
-1. Create a project at [supabase.com](https://supabase.com)
-2. In **Project Settings → API**, copy:
-   - Project URL → `VITE_SUPABASE_URL` and `SUPABASE_URL`
-   - `anon` `public` key → `VITE_SUPABASE_ANON_KEY`
-   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server `.env` only)
-3. In **Authentication → Providers**, enable Email
-4. Copy `client/.env.example` → `client/.env` and `server/.env.example` → `server/.env`, then fill in the values above
-5. Restart both dev servers
-
-When Supabase env vars are set, the app requires sign-in. Without them, the app runs without auth (local demo mode).
-
 ## What Was Prioritized
 
 1. Correct double-entry accounting with derived balances and integrity check
@@ -141,7 +124,7 @@ When Supabase env vars are set, the app requires sign-in. Without them, the app 
 
 ## Intentionally Left Out
 
-- Multi-tenancy and RBAC
+- Authentication, multi-tenancy, and RBAC
 - Backend unit/integration tests (per spec)
 - Email delivery of invoices (vendor email is stored on send; no outbound mail yet)
 - Multi-currency support

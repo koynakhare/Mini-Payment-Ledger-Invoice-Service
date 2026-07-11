@@ -2,7 +2,6 @@ import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import cors from 'cors';
 import express from 'express';
-import { createContext, type Context } from './context.js';
 import { closeDb, getDb, isPostgres } from './db/connection.js';
 import { runMigrations } from './db/migrations.js';
 import { seedIfEmpty } from './db/seed.js';
@@ -11,7 +10,6 @@ import { typeDefs } from './graphql/schema.js';
 import { systemAccountService } from './services/index.js';
 import { InvoicePdfService } from './services/InvoicePdfService.js';
 import { isAppError } from './errors/AppError.js';
-import { isSupabaseConfigured } from './lib/supabaseAdmin.js';
 
 const PORT = Number(process.env.PORT) || 8266;
 const invoicePdfService = new InvoicePdfService();
@@ -27,7 +25,7 @@ async function startServer(): Promise<void> {
   await systemAccountService.ensureExpenseAccount();
 
   const app = express();
-  const server = new ApolloServer<Context>({ typeDefs, resolvers });
+  const server = new ApolloServer({ typeDefs, resolvers });
 
   await server.start();
 
@@ -35,7 +33,7 @@ async function startServer(): Promise<void> {
     '/graphql',
     cors<cors.CorsRequest>(),
     express.json(),
-    expressMiddleware(server, { context: createContext })
+    expressMiddleware(server)
   );
 
   app.get('/health', (_req, res) => {
@@ -66,9 +64,6 @@ async function startServer(): Promise<void> {
   app.listen(PORT, () => {
     console.log(`GraphQL server ready at http://localhost:${PORT}/graphql`);
     console.log(`Database: ${isPostgres() ? 'PostgreSQL (persistent)' : 'SQLite (local file)'}`);
-    if (isSupabaseConfigured) {
-      console.log('Supabase auth enabled');
-    }
   });
 }
 

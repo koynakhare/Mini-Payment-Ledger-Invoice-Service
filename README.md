@@ -165,3 +165,4 @@ After `npm run db:seed`:
 | Transportation Expense | `EXPENSE` — invoice accrual offset |
 | Raj Transport | Vendor with dedicated `VENDOR_PAYABLE` account |
 | Metro Logistics LLC | Vendor with dedicated `VENDOR_PAYABLE` account |
+test

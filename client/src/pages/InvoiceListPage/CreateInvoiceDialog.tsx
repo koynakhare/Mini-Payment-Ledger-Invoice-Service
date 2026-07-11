@@ -19,7 +19,7 @@ import {
   useCreateInvoiceMutation,
   useCreateVendorMutation,
   useGetVendorsQuery,
-} from '../../store/api';
+} from '../../api';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getErrorMessage } from '../../utils/errors';
 

@@ -1,5 +1,5 @@
 export const CURRENCY_CONFIG = {
-  USD_TO_INR: 83,
+  USD_TO_INR: 95.39,
   DEFAULT_CURRENCY: 'USD',
   SUPPORTED_CURRENCIES: ['USD', 'INR'] as const,
 } as const;

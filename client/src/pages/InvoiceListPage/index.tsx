@@ -7,7 +7,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   useGetInvoicesQuery,
   useMarkOverdueInvoicesMutation,
-} from '../../store/api';
+} from '../../api';
 import { Loader, StatusBadge, Table, type TableColumn } from '../../components/common';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { PageHeader } from '../../components/ui/PageHeader';

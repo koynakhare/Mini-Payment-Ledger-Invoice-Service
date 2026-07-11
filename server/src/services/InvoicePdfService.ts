@@ -9,12 +9,12 @@ export class InvoicePdfService {
   private readonly payments = new PaymentRepository();
 
   async generatePdfBuffer(invoiceId: string): Promise<Buffer> {
-    const invoice = this.invoices.getInvoice(invoiceId);
-    const vendor = this.vendors.getVendor(invoice.vendorId);
-    const lineItems = this.invoices.getLineItems(invoiceId);
-    const totalCents = this.invoices.getInvoiceTotalCents(invoiceId);
-    const paidCents = this.payments.getNetPaidCents(invoiceId);
-    const remainingCents = this.invoices.getRemainingBalanceCents(invoiceId);
+    const invoice = await this.invoices.getInvoice(invoiceId);
+    const vendor = await this.vendors.getVendor(invoice.vendorId);
+    const lineItems = await this.invoices.getLineItems(invoiceId);
+    const totalCents = await this.invoices.getInvoiceTotalCents(invoiceId);
+    const paidCents = await this.payments.getNetPaidCents(invoiceId);
+    const remainingCents = await this.invoices.getRemainingBalanceCents(invoiceId);
 
     return generateInvoicePdf({
       invoice,
@@ -27,8 +27,8 @@ export class InvoicePdfService {
     });
   }
 
-  getDownloadFilename(invoiceId: string): string {
-    const invoice = this.invoices.getInvoice(invoiceId);
+  async getDownloadFilename(invoiceId: string): Promise<string> {
+    const invoice = await this.invoices.getInvoice(invoiceId);
     return invoicePdfFilename(invoice.invoiceNumber);
   }
 }

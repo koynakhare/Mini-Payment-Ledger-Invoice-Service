@@ -14,21 +14,19 @@ import {
 } from './helpers.js';
 
 describe('currency', () => {
-  beforeEach(() => {
-    resetDatabase();
-  });
+  beforeEach(async () => { await resetDatabase(); });
 
   after(async () => {
     await teardownTestServer();
   });
 
   it('converts a USD payment to INR invoice currency at the fixed rate', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-INR-01',
-      totalCents: 830_000,
+      totalCents: 953_900,
       currency: 'INR',
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -38,7 +36,7 @@ describe('currency', () => {
     });
 
     const updated = await queryInvoice(invoice.id);
-    assert.equal(updated.paidCents, 830_000);
+    assert.equal(updated.paidCents, 953_900);
     assert.equal(updated.remainingCents, 0);
   });
 
@@ -50,12 +48,12 @@ describe('currency', () => {
 
   it('compares remaining balance in invoice currency after a cross-currency payment', async () => {
     const totalInr = 415_000;
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-INR-REMAIN',
       totalCents: totalInr,
       currency: 'INR',
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const usdPayment = 2_500;
     const appliedInr = convertCurrency(usdPayment, 'USD', 'INR');
@@ -75,12 +73,12 @@ describe('currency', () => {
   });
 
   it('keeps per-currency ledger integrity after cross-currency payment', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-INR-BAL',
       totalCents: 415_000,
       currency: 'INR',
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -98,12 +96,12 @@ describe('currency', () => {
     const usdCents = 12_345;
     const expectedInr = Math.round(usdCents * CURRENCY_CONFIG.USD_TO_INR);
 
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-ROUND',
       totalCents: expectedInr,
       currency: 'INR',
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -118,11 +116,11 @@ describe('currency', () => {
   });
 
   it('rejects unsupported payment currencies', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-BAD-FX',
       totalCents: 50_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const message = await gqlExpectError(
       `mutation ($input: ApplyPaymentInput!) {

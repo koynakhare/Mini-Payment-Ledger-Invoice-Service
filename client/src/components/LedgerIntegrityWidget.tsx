@@ -13,7 +13,7 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import {
   useGetLedgerIntegrityQuery,
   useVerifyLedgerIntegrityMutation,
-} from '../store/api';
+} from '../api';
 import { ErrorState, Loader } from './common';
 import { MoneyAmount } from './ui/MoneyAmount';
 import { useToast } from './ui/ToastProvider';

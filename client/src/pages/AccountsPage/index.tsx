@@ -6,7 +6,7 @@ import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import { Link as RouterLink } from 'react-router-dom';
 import filter from 'lodash/filter.js';
 import sumBy from 'lodash/sumBy.js';
-import { useGetAccountsQuery } from '../../store/api';
+import { useGetAccountsQuery } from '../../api';
 import { Table, type TableColumn } from '../../components/common';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { PageHeader } from '../../components/ui/PageHeader';

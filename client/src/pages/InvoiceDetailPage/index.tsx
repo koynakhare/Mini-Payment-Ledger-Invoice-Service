@@ -3,7 +3,7 @@ import { Box, Button, Card, CardContent, Grid, Skeleton } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useParams } from 'react-router-dom';
-import { useGetInvoiceQuery, useSendInvoiceMutation } from '../../store/api';
+import { useGetInvoiceQuery } from '../../api';
 import {
   Breadcrumbs,
   ErrorState,
@@ -17,22 +17,23 @@ import { ROUTE_PATHS } from '../../routes/routePaths';
 import type { Payment, ReversalType } from '../../types';
 import { getErrorMessage } from '../../utils/errors';
 import { downloadInvoicePdf } from '../../utils/invoicePdf';
-import { tokens } from '../../theme/tokens';
+import { gradientButtonSx } from '../../theme/buttonStyles';
+
 import { ApplyPaymentForm } from './ApplyPaymentForm';
 import { InvoiceSummaryCards } from './InvoiceSummaryCards';
 import { LineItemsTable } from './LineItemsTable';
 import { PaymentHistoryTable } from './PaymentHistoryTable';
 import { ReversalsTable } from './ReversalsTable';
 import { ReversePaymentDialog } from './ReversePaymentDialog';
+import { SendInvoiceDialog } from './SendInvoiceDialog';
 
 export function InvoiceDetailPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
   const { data: invoice, isLoading, isError, error } = useGetInvoiceQuery(invoiceId ?? '', {
     skip: !invoiceId,
   });
-  const [sendInvoice, { isLoading: sending }] = useSendInvoiceMutation();
   const { showToast } = useToast();
-
+  const [sendInvoiceOpen, setSendInvoiceOpen] = useState(false);
   const [reverseTarget, setReverseTarget] = useState<{
     payment: Payment;
     type: ReversalType;
@@ -79,15 +80,6 @@ export function InvoiceDetailPage() {
   const canPay = PAYABLE_INVOICE_STATUSES.includes(invoice.status);
   const canSend = invoice.status === INVOICE_STATUS.DRAFT;
 
-  const handleSend = async () => {
-    try {
-      await sendInvoice(invoice.id).unwrap();
-      showToast('Invoice sent and posted to the ledger.', 'success');
-    } catch (err) {
-      showToast(getErrorMessage(err), 'error');
-    }
-  };
-
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
     try {
@@ -125,15 +117,10 @@ export function InvoiceDetailPage() {
                 variant="contained"
                 fullWidth
                 startIcon={<SendIcon />}
-                onClick={handleSend}
-                disabled={sending}
-                sx={{
-                  width: { sm: 'auto' },
-                  background: tokens.color.accentGradient,
-                  '&:hover': { background: tokens.color.accentGradient, filter: 'brightness(1.06)' },
-                }}
+                onClick={() => setSendInvoiceOpen(true)}
+                sx={{ width: { sm: 'auto' }, ...gradientButtonSx }}
               >
-                {sending ? 'Sending…' : 'Send Invoice'}
+                Send Invoice
               </Button>
             ) : (
               <StatusBadge status={invoice.status} size="medium" />
@@ -158,6 +145,12 @@ export function InvoiceDetailPage() {
         invoiceCurrency={invoice.currency}
         reversalType={reverseTarget?.type ?? null}
         onClose={() => setReverseTarget(null)}
+      />
+
+      <SendInvoiceDialog
+        open={sendInvoiceOpen}
+        invoice={invoice}
+        onClose={() => setSendInvoiceOpen(false)}
       />
     </Box>
   );

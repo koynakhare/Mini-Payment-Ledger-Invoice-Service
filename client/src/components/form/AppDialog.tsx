@@ -96,8 +96,8 @@ export function AppDialog({
           </IconButton>
         ) : null}
       </DialogTitle>
-      <DialogContent>
-        <Stack spacing={2.5}>
+      <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
+        <Stack spacing={2.5} sx={{ overflow: 'visible', pt: 0.5 }}>
           {description ? (
             typeof description === 'string' ? (
               <Typography variant="body2">{description}</Typography>

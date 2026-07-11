@@ -1,6 +1,11 @@
-export function getErrorMessage(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String((error as { message: string }).message);
-  }
-  return 'Request failed';
-}
+export {
+  ApiError,
+  getErrorCode,
+  getErrorMessage,
+  isApiError,
+  isConflictError,
+  isNotFoundError,
+  isValidationError,
+  toApiError,
+} from '../api/graphql/errors';
+export type { ApiErrorCode } from '../api/graphql/errors';

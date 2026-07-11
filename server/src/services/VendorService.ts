@@ -5,6 +5,7 @@ import { AppError } from '../errors/AppError.js';
 import { AccountRepository } from '../repositories/AccountRepository.js';
 import { VendorRepository } from '../repositories/VendorRepository.js';
 import type { Account, CreateVendorInput, Vendor } from '../types/index.js';
+import { isValidEmail } from '../utils/email.js';
 
 const COMPANY_BANK_NAME = 'Company Bank Account';
 const EXPENSE_ACCOUNT_NAME = 'Transportation Expense';
@@ -13,79 +14,98 @@ export class VendorService {
   private readonly vendors = new VendorRepository();
   private readonly accounts = new AccountRepository();
 
-  listVendors(): Vendor[] {
+  async listVendors(): Promise<Vendor[]> {
     return this.vendors.findAll();
   }
 
-  getVendor(id: string): Vendor {
-    const vendor = this.vendors.findById(id);
+  async getVendor(id: string): Promise<Vendor> {
+    const vendor = await this.vendors.findById(id);
     if (!vendor) {
       throw new AppError('NOT_FOUND', `Vendor not found: ${id}`);
     }
     return vendor;
   }
 
-  getVendorPayableAccount(vendorId: string): Account {
-    this.getVendor(vendorId);
-    const account = this.accounts.findByVendorId(vendorId);
+  async getVendorPayableAccount(vendorId: string): Promise<Account> {
+    await this.getVendor(vendorId);
+    const account = await this.accounts.findByVendorId(vendorId);
     if (!account) {
       throw new AppError('INTERNAL_ERROR', `Vendor payable account missing for vendor: ${vendorId}`);
     }
     return account;
   }
 
-  createVendor(input: CreateVendorInput): Vendor {
+  async createVendor(input: CreateVendorInput): Promise<Vendor> {
     const name = trim(input.name);
     if (isEmpty(name)) {
       throw new AppError('VALIDATION_ERROR', 'Vendor name is required');
     }
 
-    return runInTransaction(() => {
-      const vendor = this.vendors.create(name, input.contactInfo ? trim(input.contactInfo) : null);
-      this.accounts.create(`Accounts Payable — ${name}`, 'VENDOR_PAYABLE', vendor.id);
+    return runInTransaction(async () => {
+      const vendor = await this.vendors.create(
+        name,
+        input.contactInfo ? trim(input.contactInfo) : null
+      );
+      await this.accounts.create(`Accounts Payable — ${name}`, 'VENDOR_PAYABLE', vendor.id);
       return vendor;
     });
   }
 
-  ensureVendorPayableAccount(vendorId: string): Account {
-    const vendor = this.getVendor(vendorId);
-    const existing = this.accounts.findByVendorId(vendorId);
+  async ensureVendorPayableAccount(vendorId: string): Promise<Account> {
+    const vendor = await this.getVendor(vendorId);
+    const existing = await this.accounts.findByVendorId(vendorId);
     if (existing) {
       return existing;
     }
     return this.accounts.create(`Accounts Payable — ${vendor.name}`, 'VENDOR_PAYABLE', vendor.id);
+  }
+
+  async updateContactInfo(vendorId: string, contactInfo: string): Promise<Vendor> {
+    const email = trim(contactInfo);
+    if (isEmpty(email)) {
+      throw new AppError('VALIDATION_ERROR', 'Vendor email is required');
+    }
+    if (!isValidEmail(email)) {
+      throw new AppError('VALIDATION_ERROR', 'Enter a valid vendor email address');
+    }
+
+    const updated = await this.vendors.updateContactInfo(vendorId, email);
+    if (!updated) {
+      throw new AppError('NOT_FOUND', `Vendor not found: ${vendorId}`);
+    }
+    return updated;
   }
 }
 
 export class SystemAccountService {
   private readonly accounts = new AccountRepository();
 
-  ensureCompanyBankAccount(): Account {
-    const existing = this.accounts.findByType('COMPANY_BANK');
+  async ensureCompanyBankAccount(): Promise<Account> {
+    const existing = await this.accounts.findByType('COMPANY_BANK');
     if (existing.length > 0) {
       return existing[0];
     }
     return this.accounts.create(COMPANY_BANK_NAME, 'COMPANY_BANK');
   }
 
-  ensureExpenseAccount(): Account {
-    const existing = this.accounts.findByType('EXPENSE');
+  async ensureExpenseAccount(): Promise<Account> {
+    const existing = await this.accounts.findByType('EXPENSE');
     if (existing.length > 0) {
       return existing[0];
     }
     return this.accounts.create(EXPENSE_ACCOUNT_NAME, 'EXPENSE');
   }
 
-  getCompanyBankAccount(): Account {
-    const accounts = this.accounts.findByType('COMPANY_BANK');
+  async getCompanyBankAccount(): Promise<Account> {
+    const accounts = await this.accounts.findByType('COMPANY_BANK');
     if (accounts.length === 0) {
       throw new AppError('INTERNAL_ERROR', 'Company bank account is not configured');
     }
     return accounts[0];
   }
 
-  getExpenseAccount(): Account {
-    const accounts = this.accounts.findByType('EXPENSE');
+  async getExpenseAccount(): Promise<Account> {
+    const accounts = await this.accounts.findByType('EXPENSE');
     if (accounts.length === 0) {
       throw new AppError('INTERNAL_ERROR', 'Expense account is not configured');
     }

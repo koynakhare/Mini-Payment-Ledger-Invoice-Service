@@ -1,4 +1,5 @@
 export const ROUTE_PATHS = {
+  LOGIN: '/login',
   DASHBOARD: '/',
   ACCOUNTS: '/accounts',
   ACCOUNT_STATEMENT: (accountId: string) => `/accounts/${accountId}`,

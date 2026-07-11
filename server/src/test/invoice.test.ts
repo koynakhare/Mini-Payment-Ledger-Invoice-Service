@@ -14,8 +14,8 @@ import {
 } from './helpers.js';
 
 describe('invoice', () => {
-  beforeEach(() => {
-    resetDatabase();
+  beforeEach(async () => {
+    await resetDatabase();
   });
 
   after(async () => {
@@ -51,7 +51,7 @@ describe('invoice', () => {
   });
 
   it('moves a draft invoice to sent via sendInvoice', async () => {
-    const { invoice } = createVendorWithInvoice({ invoiceNumber: 'INV-SEND-01' });
+    const { invoice } = await createVendorWithInvoice({ invoiceNumber: 'INV-SEND-01' });
     assert.equal(invoice.status, 'draft');
 
     const sent = await mutateSendInvoice(invoice.id);
@@ -77,12 +77,12 @@ describe('invoice', () => {
   });
 
   it('flags past-due unpaid invoices as overdue via markOverdueInvoices', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-OVERDUE',
       dueDate: '2020-01-01',
       totalCents: 88_400,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const result = await mutateMarkOverdue('2026-07-10');
     const updated = result.markOverdueInvoices.find((item) => item.id === invoice.id);
@@ -92,12 +92,12 @@ describe('invoice', () => {
   });
 
   it('does not mark an already-paid invoice as overdue', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-OVERDUE-PAID',
       dueDate: '2020-01-01',
       totalCents: 10_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,

@@ -21,36 +21,36 @@ export class InvoiceService {
   private readonly vendors = new VendorService();
   private readonly systemAccounts = new SystemAccountService();
 
-  listInvoices(status?: InvoiceStatus): Invoice[] {
+  async listInvoices(status?: InvoiceStatus): Promise<Invoice[]> {
     return this.invoices.findAll(status);
   }
 
-  getInvoice(id: string): Invoice {
-    const invoice = this.invoices.findById(id);
+  async getInvoice(id: string): Promise<Invoice> {
+    const invoice = await this.invoices.findById(id);
     if (!invoice) {
       throw new AppError('NOT_FOUND', `Invoice not found: ${id}`);
     }
     return invoice;
   }
 
-  getLineItems(invoiceId: string): InvoiceLineItem[] {
-    this.getInvoice(invoiceId);
+  async getLineItems(invoiceId: string): Promise<InvoiceLineItem[]> {
+    await this.getInvoice(invoiceId);
     return this.invoices.findLineItems(invoiceId);
   }
 
-  getInvoiceTotalCents(invoiceId: string): number {
+  async getInvoiceTotalCents(invoiceId: string): Promise<number> {
     return this.invoices.getTotalCents(invoiceId);
   }
 
-  getRemainingBalanceCents(invoiceId: string): number {
-    const total = this.invoices.getTotalCents(invoiceId);
-    const paid = this.payments.getNetPaidCents(invoiceId);
+  async getRemainingBalanceCents(invoiceId: string): Promise<number> {
+    const total = await this.invoices.getTotalCents(invoiceId);
+    const paid = await this.payments.getNetPaidCents(invoiceId);
     return total - paid;
   }
 
-  createInvoice(input: CreateInvoiceInput): Invoice {
-    const vendor = this.vendors.getVendor(input.vendorId);
-    this.vendors.ensureVendorPayableAccount(vendor.id);
+  async createInvoice(input: CreateInvoiceInput): Promise<Invoice> {
+    const vendor = await this.vendors.getVendor(input.vendorId);
+    await this.vendors.ensureVendorPayableAccount(vendor.id);
 
     if (isEmpty(trim(input.invoiceNumber))) {
       throw new AppError('VALIDATION_ERROR', 'Invoice number is required');
@@ -77,21 +77,23 @@ export class InvoiceService {
     );
   }
 
-  sendInvoice(invoiceId: string): Invoice {
-    const invoice = this.getInvoice(invoiceId);
+  async sendInvoice(invoiceId: string, vendorEmail: string): Promise<Invoice> {
+    const invoice = await this.getInvoice(invoiceId);
     if (invoice.status !== 'draft') {
       throw new AppError('INVALID_STATUS', 'Only draft invoices can be sent');
     }
 
-    const totalCents = this.invoices.getTotalCents(invoiceId);
+    await this.vendors.updateContactInfo(invoice.vendorId, vendorEmail);
+
+    const totalCents = await this.invoices.getTotalCents(invoiceId);
     if (totalCents <= 0) {
       throw new AppError('VALIDATION_ERROR', 'Invoice total must be greater than zero to send');
     }
 
-    const vendorPayable = this.vendors.getVendorPayableAccount(invoice.vendorId);
-    const expenseAccount = this.systemAccounts.getExpenseAccount();
+    const vendorPayable = await this.vendors.getVendorPayableAccount(invoice.vendorId);
+    const expenseAccount = await this.systemAccounts.getExpenseAccount();
 
-    this.ledger.createTransaction(
+    await this.ledger.createTransaction(
       `Invoice ${invoice.invoiceNumber} posted`,
       [
         { accountId: expenseAccount.id, amountCents: totalCents, entryType: 'debit', currency: invoice.currency },
@@ -104,10 +106,10 @@ export class InvoiceService {
     return this.invoices.updateStatus(invoiceId, 'sent');
   }
 
-  resolveStatusFromPayment(invoiceId: string): InvoiceStatus {
-    const remaining = this.getRemainingBalanceCents(invoiceId);
-    const total = this.invoices.getTotalCents(invoiceId);
-    const invoice = this.getInvoice(invoiceId);
+  async resolveStatusFromPayment(invoiceId: string): Promise<InvoiceStatus> {
+    const remaining = await this.getRemainingBalanceCents(invoiceId);
+    const total = await this.invoices.getTotalCents(invoiceId);
+    const invoice = await this.getInvoice(invoiceId);
 
     if (remaining <= 0) {
       return 'paid';
@@ -121,15 +123,15 @@ export class InvoiceService {
     return 'sent';
   }
 
-  markOverdueInvoices(asOfDate?: string): Invoice[] {
+  async markOverdueInvoices(asOfDate?: string): Promise<Invoice[]> {
     const date = asOfDate ?? new Date().toISOString().split('T')[0];
-    const candidates = this.invoices.findOverdueCandidates(date);
+    const candidates = await this.invoices.findOverdueCandidates(date);
     const updated: Invoice[] = [];
 
     for (const invoice of candidates) {
-      const remaining = this.getRemainingBalanceCents(invoice.id);
+      const remaining = await this.getRemainingBalanceCents(invoice.id);
       if (remaining > 0) {
-        updated.push(this.invoices.updateStatus(invoice.id, 'overdue'));
+        updated.push(await this.invoices.updateStatus(invoice.id, 'overdue'));
       }
     }
 

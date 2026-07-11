@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Box, Button, Card, CardContent, Stack, Typography } from '@mui/material';
+import { Box, Button, Card, CardContent, Typography } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
 import {
   CURRENCY_CONFIG,
@@ -10,7 +10,7 @@ import {
 import { FormField, useFormState, type FormFieldConfig } from '../../components/form';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { useToast } from '../../components/ui/ToastProvider';
-import { useApplyPaymentMutation } from '../../store/api';
+import { useApplyPaymentMutation } from '../../api';
 import type { Invoice } from '../../types';
 import { convertCurrency } from '../../utils/convertCurrency';
 import {
@@ -19,6 +19,7 @@ import {
   parseAmountToCents,
 } from '../../utils/format';
 import { getErrorMessage } from '../../utils/errors';
+import { gradientButtonSx } from '../../theme/buttonStyles';
 import { tokens } from '../../theme/tokens';
 
 interface ApplyPaymentFormProps {
@@ -45,41 +46,45 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
   const showConversionPreview =
     paymentCurrency !== invoice.currency && convertedPreviewCents > 0;
 
-  const fields = useMemo<FormFieldConfig[]>(() => {
-    const fieldError = paymentError || errors.paymentAmount;
-    return [
-      {
-        type: 'text',
-        name: 'paymentAmount',
-        label: `Amount (${CURRENCY_SYMBOLS[paymentCurrency]})`,
-        placeholder: (invoice.remainingCents / 100).toFixed(2),
-        error: fieldError,
-        helperText:
-          fieldError ||
-          (showConversionPreview
-            ? `≈ ${formatCents(convertedPreviewCents, invoice.currency)} applied to invoice`
-            : ' '),
-      },
-      {
-        type: 'select',
-        name: 'paymentCurrency',
-        label: 'Currency',
-        minWidth: 140,
-        options: CURRENCY_OPTIONS.map((option) => ({
-          value: option.value,
-          label: option.value,
-        })),
-      },
-    ];
-  }, [
-    convertedPreviewCents,
-    errors.paymentAmount,
-    invoice.currency,
-    invoice.remainingCents,
-    paymentCurrency,
-    paymentError,
-    showConversionPreview,
-  ]);
+  const amountField = useMemo<FormFieldConfig>(
+    () => ({
+      type: 'text',
+      name: 'paymentAmount',
+      label: `Amount (${CURRENCY_SYMBOLS[paymentCurrency]})`,
+      placeholder: (invoice.remainingCents / 100).toFixed(2),
+      error: paymentError || errors.paymentAmount,
+      helperText:
+        paymentError ||
+        errors.paymentAmount ||
+        (showConversionPreview
+          ? `≈ ${formatCents(convertedPreviewCents, invoice.currency)} applied to invoice`
+          : undefined),
+    }),
+    [
+      convertedPreviewCents,
+      errors.paymentAmount,
+      invoice.currency,
+      invoice.remainingCents,
+      paymentCurrency,
+      paymentError,
+      showConversionPreview,
+    ]
+  );
+
+  const currencyField = useMemo<FormFieldConfig>(
+    () => ({
+      type: 'select',
+      name: 'paymentCurrency',
+      label: 'Currency',
+      fullWidth: false,
+      minWidth: 140,
+      options: CURRENCY_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.value,
+      })),
+    }),
+    []
+  );
 
   const handleChange = (name: string, value: string) => {
     setPaymentError('');
@@ -140,16 +145,26 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
           />
           . Overpayment is rejected automatically.
         </Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start" sx={{ width: '100%' }}>
-          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-            <FormField
-              field={fields[0]}
-              value={values.paymentAmount}
-              onChange={(value) => handleChange('paymentAmount', value)}
-            />
-          </Box>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'minmax(220px, 1fr) 140px',
+              md: 'minmax(280px, 1fr) 140px auto',
+            },
+            gap: 2,
+            alignItems: 'start',
+          }}
+        >
           <FormField
-            field={fields[1]}
+            field={amountField}
+            value={values.paymentAmount}
+            onChange={(value) => handleChange('paymentAmount', value)}
+          />
+          <FormField
+            field={currencyField}
             value={values.paymentCurrency}
             onChange={(value) => handleChange('paymentCurrency', value)}
           />
@@ -158,15 +173,18 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
             startIcon={<PaymentIcon />}
             onClick={handlePay}
             disabled={paying || !values.paymentAmount}
+            fullWidth
             sx={{
-              minWidth: 160,
-              background: tokens.color.accentGradient,
-              '&:hover': { background: tokens.color.accentGradient, filter: 'brightness(1.06)' },
+              ...gradientButtonSx,
+              minWidth: { md: 180 },
+              width: { xs: '100%', md: 'auto' },
+              height: { md: 56 },
             }}
           >
             {paying ? 'Processing…' : 'Apply Payment'}
           </Button>
-        </Stack>
+        </Box>
+
         {showConversionPreview ? (
           <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: tokens.color.inkMuted }}>
             Fixed rate: 1 USD = {CURRENCY_CONFIG.USD_TO_INR} INR

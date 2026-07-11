@@ -1,7 +1,5 @@
-import { randomUUID } from 'crypto';
 import sumBy from 'lodash/sumBy.js';
-import { getDb, runInTransaction } from '../db/connection.js';
-import { allRows, oneRow } from '../db/sqliteRows.js';
+import { newId, nowIso, queryAll, queryOne, execute, runInTransaction } from '../db/connection.js';
 import type {
   AccountStatementLine,
   CurrencyCode,
@@ -78,31 +76,30 @@ export interface CreateLedgerEntryInput {
 }
 
 export class LedgerRepository {
-  findTransactionById(id: string): Transaction | null {
-    const db = getDb();
-    const row = oneRow<TransactionRow>(db.prepare('SELECT * FROM transactions WHERE id = ?').get(id));
+  async findTransactionById(id: string): Promise<Transaction | null> {
+    const row = await queryOne<TransactionRow>('SELECT * FROM transactions WHERE id = $1', [id]);
     return row ? mapTransaction(row) : null;
   }
 
-  findEntriesByTransactionId(transactionId: string): LedgerEntry[] {
-    const db = getDb();
-    const rows = allRows<LedgerEntryRow>(
-      db
-        .prepare('SELECT * FROM ledger_entries WHERE transaction_id = ? ORDER BY entry_type')
-        .all(transactionId)
+  async findEntriesByTransactionId(transactionId: string): Promise<LedgerEntry[]> {
+    const rows = await queryAll<LedgerEntryRow>(
+      'SELECT * FROM ledger_entries WHERE transaction_id = $1 ORDER BY entry_type',
+      [transactionId]
     );
     return rows.map(mapEntry);
   }
 
-  findEntriesByAccountId(accountId: string): Array<LedgerEntry & { description: string; referenceType: string | null; referenceId: string | null }> {
-    const db = getDb();
-    const rows = allRows<LedgerEntryWithTransactionRow>(db.prepare(`
-      SELECT le.*, t.description, t.reference_type, t.reference_id
-      FROM ledger_entries le
-      JOIN transactions t ON t.id = le.transaction_id
-      WHERE le.account_id = ?
-      ORDER BY le.created_at ASC, le.id ASC
-    `).all(accountId));
+  async findEntriesByAccountId(
+    accountId: string
+  ): Promise<Array<LedgerEntry & { description: string; referenceType: string | null; referenceId: string | null }>> {
+    const rows = await queryAll<LedgerEntryWithTransactionRow>(
+      `SELECT le.*, t.description, t.reference_type, t.reference_id
+       FROM ledger_entries le
+       JOIN transactions t ON t.id = le.transaction_id
+       WHERE le.account_id = $1
+       ORDER BY le.created_at ASC, le.id ASC`,
+      [accountId]
+    );
 
     return rows.map((row) => ({
       ...mapEntry(row),
@@ -112,46 +109,45 @@ export class LedgerRepository {
     }));
   }
 
-  createTransaction(
+  async createTransaction(
     description: string,
     entries: CreateLedgerEntryInput[],
     referenceType?: string,
     referenceId?: string
-  ): Transaction {
+  ): Promise<Transaction> {
     return runInTransaction(() =>
       this.insertTransaction(description, entries, referenceType, referenceId)
     );
   }
 
-  insertTransaction(
+  async insertTransaction(
     description: string,
     entries: CreateLedgerEntryInput[],
     referenceType?: string,
     referenceId?: string
-  ): Transaction {
-    const transactionId = randomUUID();
-    const createdAt = new Date().toISOString();
+  ): Promise<Transaction> {
+    const transactionId = newId();
+    const createdAt = nowIso();
 
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO transactions (id, description, reference_type, reference_id, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(transactionId, description, referenceType ?? null, referenceId ?? null, createdAt);
-
-    const insertEntry = db.prepare(`
-      INSERT INTO ledger_entries (id, transaction_id, account_id, amount_cents, entry_type, currency, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    await execute(
+      `INSERT INTO transactions (id, description, reference_type, reference_id, created_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [transactionId, description, referenceType ?? null, referenceId ?? null, createdAt]
+    );
 
     for (const entry of entries) {
-      insertEntry.run(
-        randomUUID(),
-        transactionId,
-        entry.accountId,
-        entry.amountCents,
-        entry.entryType,
-        entry.currency,
-        createdAt
+      await execute(
+        `INSERT INTO ledger_entries (id, transaction_id, account_id, amount_cents, entry_type, currency, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          newId(),
+          transactionId,
+          entry.accountId,
+          entry.amountCents,
+          entry.entryType,
+          entry.currency,
+          createdAt,
+        ]
       );
     }
 
@@ -164,9 +160,8 @@ export class LedgerRepository {
     };
   }
 
-  getIntegrityCheck(): LedgerIntegrityResult {
-    const db = getDb();
-    const currencyRows = allRows<CurrencyIntegrityRow>(db.prepare(`
+  async getIntegrityCheck(): Promise<LedgerIntegrityResult> {
+    const currencyRows = await queryAll<CurrencyIntegrityRow>(`
       SELECT
         currency,
         COALESCE(SUM(CASE WHEN entry_type = 'debit' THEN amount_cents ELSE 0 END), 0) AS total_debits,
@@ -174,9 +169,9 @@ export class LedgerRepository {
         COUNT(*) AS entry_count
       FROM ledger_entries
       GROUP BY currency
-    `).all());
+    `);
 
-    const txCount = oneRow<CountRow>(db.prepare('SELECT COUNT(*) AS count FROM transactions').get());
+    const txCount = await queryOne<CountRow>('SELECT COUNT(*) AS count FROM transactions');
 
     const existingCurrencies = new Set(currencyRows.map((row) => row.currency));
     const currencyBalances: CurrencyLedgerBalance[] = CURRENCY_CONFIG.SUPPORTED_CURRENCIES.filter(
@@ -201,8 +196,8 @@ export class LedgerRepository {
     };
   }
 
-  buildAccountStatement(accountId: string): AccountStatementLine[] {
-    const entries = this.findEntriesByAccountId(accountId);
+  async buildAccountStatement(accountId: string): Promise<AccountStatementLine[]> {
+    const entries = await this.findEntriesByAccountId(accountId);
     let runningBalance = 0;
 
     return entries.map((entry) => {

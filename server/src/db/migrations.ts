@@ -1,6 +1,7 @@
-import { randomUUID } from 'crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { getDb } from './connection.js';
+import { randomUUID } from 'crypto';
+import { execute, getDb, isPostgres } from './connection.js';
+import { postgresSchemaSql } from './postgresSchema.js';
 import { allRows, oneRow } from './sqliteRows.js';
 
 const baseMigrations = `
@@ -170,6 +171,46 @@ function upgradeLegacyInvoices(db: DatabaseSync): void {
   }
 }
 
+function removeLegacyVendorAccountId(db: DatabaseSync): void {
+  if (tableExists(db, 'invoices_migrated')) {
+    db.exec('DROP TABLE invoices_migrated');
+  }
+
+  if (!tableExists(db, 'invoices') || !columnExists(db, 'invoices', 'vendor_account_id')) {
+    return;
+  }
+
+  db.exec(`
+    CREATE TABLE invoices_migrated (
+      id TEXT PRIMARY KEY,
+      vendor_id TEXT REFERENCES vendors(id),
+      invoice_number TEXT NOT NULL UNIQUE,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'partially_paid', 'paid', 'overdue')),
+      due_date TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    INSERT INTO invoices_migrated (id, vendor_id, invoice_number, currency, status, due_date, created_at, updated_at)
+    SELECT
+      id,
+      vendor_id,
+      invoice_number,
+      COALESCE(currency, 'USD'),
+      status,
+      due_date,
+      created_at,
+      updated_at
+    FROM invoices;
+
+    PRAGMA foreign_keys = OFF;
+    DROP TABLE invoices;
+    ALTER TABLE invoices_migrated RENAME TO invoices;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 function upgradeCurrencyColumns(db: DatabaseSync): void {
   if (tableExists(db, 'invoices') && !columnExists(db, 'invoices', 'currency')) {
     db.exec("ALTER TABLE invoices ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'");
@@ -208,11 +249,17 @@ function ensureIndexes(db: DatabaseSync): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_vendor ON invoices(vendor_id)');
 }
 
-export function runMigrations(): void {
+export async function runMigrations(): Promise<void> {
+  if (isPostgres()) {
+    await execute(postgresSchemaSql);
+    return;
+  }
+
   const db = getDb();
   db.exec(baseMigrations);
   upgradeLegacyAccounts(db);
   upgradeLegacyInvoices(db);
   upgradeCurrencyColumns(db);
+  removeLegacyVendorAccountId(db);
   ensureIndexes(db);
 }

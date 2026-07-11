@@ -1,7 +1,5 @@
-import { randomUUID } from 'crypto';
 import sumBy from 'lodash/sumBy.js';
-import { getDb } from '../db/connection.js';
-import { allRows, oneRow } from '../db/sqliteRows.js';
+import { isPostgres, newId, nowIso, queryAll, queryOne, execute } from '../db/connection.js';
 import type { CurrencyCode } from '../config/currencyConfig.js';
 import type { Invoice, InvoiceLineItem, InvoiceStatus } from '../types/index.js';
 
@@ -56,92 +54,87 @@ export interface CreateLineItemData {
 }
 
 export class InvoiceRepository {
-  findAll(status?: InvoiceStatus): Invoice[] {
-    const db = getDb();
-    let rows: InvoiceRow[];
-    if (status) {
-      rows = allRows<InvoiceRow>(
-        db.prepare('SELECT * FROM invoices WHERE status = ? ORDER BY created_at DESC').all(status)
-      );
-    } else {
-      rows = allRows<InvoiceRow>(db.prepare('SELECT * FROM invoices ORDER BY created_at DESC').all());
-    }
+  async findAll(status?: InvoiceStatus): Promise<Invoice[]> {
+    const rows = status
+      ? await queryAll<InvoiceRow>(
+          'SELECT * FROM invoices WHERE status = $1 ORDER BY created_at DESC',
+          [status]
+        )
+      : await queryAll<InvoiceRow>('SELECT * FROM invoices ORDER BY created_at DESC');
     return rows.map(mapInvoice);
   }
 
-  findById(id: string): Invoice | null {
-    const db = getDb();
-    const row = oneRow<InvoiceRow>(db.prepare('SELECT * FROM invoices WHERE id = ?').get(id));
+  async findById(id: string): Promise<Invoice | null> {
+    const row = await queryOne<InvoiceRow>('SELECT * FROM invoices WHERE id = $1', [id]);
     return row ? mapInvoice(row) : null;
   }
 
-  findByIdForUpdate(id: string): Invoice | null {
-    return this.findById(id);
+  async findByIdForUpdate(id: string): Promise<Invoice | null> {
+    const sql = isPostgres()
+      ? 'SELECT * FROM invoices WHERE id = $1 FOR UPDATE'
+      : 'SELECT * FROM invoices WHERE id = $1';
+    const row = await queryOne<InvoiceRow>(sql, [id]);
+    return row ? mapInvoice(row) : null;
   }
 
-  findLineItems(invoiceId: string): InvoiceLineItem[] {
-    const db = getDb();
-    const rows = allRows<LineItemRow>(
-      db.prepare('SELECT * FROM invoice_line_items WHERE invoice_id = ?').all(invoiceId)
+  async findLineItems(invoiceId: string): Promise<InvoiceLineItem[]> {
+    const rows = await queryAll<LineItemRow>(
+      'SELECT * FROM invoice_line_items WHERE invoice_id = $1',
+      [invoiceId]
     );
     return rows.map(mapLineItem);
   }
 
-  getTotalCents(invoiceId: string): number {
-    const items = this.findLineItems(invoiceId);
+  async getTotalCents(invoiceId: string): Promise<number> {
+    const items = await this.findLineItems(invoiceId);
     return sumBy(items, 'amountCents');
   }
 
-  create(
+  async create(
     vendorId: string,
     invoiceNumber: string,
     dueDate: string,
     lineItems: CreateLineItemData[],
     currency: CurrencyCode = 'USD'
-  ): Invoice {
-    const id = randomUUID();
-    const now = new Date().toISOString();
+  ): Promise<Invoice> {
+    const id = newId();
+    const now = nowIso();
 
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO invoices (id, vendor_id, invoice_number, currency, status, due_date, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
-    `).run(id, vendorId, invoiceNumber, currency, dueDate, now, now);
-
-    const insertLineItem = db.prepare(`
-      INSERT INTO invoice_line_items (id, invoice_id, description, quantity, unit_price_cents, amount_cents)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    await execute(
+      `INSERT INTO invoices (id, vendor_id, invoice_number, currency, status, due_date, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)`,
+      [id, vendorId, invoiceNumber, currency, dueDate, now, now]
+    );
 
     for (const item of lineItems) {
       const amountCents = item.quantity * item.unitPriceCents;
-      insertLineItem.run(
-        randomUUID(),
-        id,
-        item.description,
-        item.quantity,
-        item.unitPriceCents,
-        amountCents
+      await execute(
+        `INSERT INTO invoice_line_items (id, invoice_id, description, quantity, unit_price_cents, amount_cents)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [newId(), id, item.description, item.quantity, item.unitPriceCents, amountCents]
       );
     }
 
-    return this.findById(id)!;
+    return (await this.findById(id))!;
   }
 
-  updateStatus(id: string, status: InvoiceStatus): Invoice {
-    const db = getDb();
-    const now = new Date().toISOString();
-    db.prepare('UPDATE invoices SET status = ?, updated_at = ? WHERE id = ?').run(status, now, id);
-    return this.findById(id)!;
+  async updateStatus(id: string, status: InvoiceStatus): Promise<Invoice> {
+    const now = nowIso();
+    await execute('UPDATE invoices SET status = $1, updated_at = $2 WHERE id = $3', [
+      status,
+      now,
+      id,
+    ]);
+    return (await this.findById(id))!;
   }
 
-  findOverdueCandidates(asOfDate: string): Invoice[] {
-    const db = getDb();
-    const rows = allRows<InvoiceRow>(db.prepare(`
-      SELECT * FROM invoices
-      WHERE status IN ('sent', 'partially_paid')
-        AND due_date < ?
-    `).all(asOfDate));
+  async findOverdueCandidates(asOfDate: string): Promise<Invoice[]> {
+    const rows = await queryAll<InvoiceRow>(
+      `SELECT * FROM invoices
+       WHERE status IN ('sent', 'partially_paid')
+         AND due_date < $1`,
+      [asOfDate]
+    );
     return rows.map(mapInvoice);
   }
 }

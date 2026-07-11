@@ -8,7 +8,7 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import { useNavigate } from 'react-router-dom';
 import filter from 'lodash/filter.js';
 import sumBy from 'lodash/sumBy.js';
-import { useGetAccountsQuery, useGetInvoicesQuery } from '../store/api';
+import { useGetAccountsQuery, useGetInvoicesQuery } from '../api';
 import { Loader } from './common';
 import { StatCard } from './ui/StatCard';
 import { ROUTE_PATHS } from '../routes/routePaths';

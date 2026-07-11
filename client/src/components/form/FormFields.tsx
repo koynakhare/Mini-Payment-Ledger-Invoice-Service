@@ -21,7 +21,7 @@ export function FormFields({
   direction = 'column',
 }: FormFieldsProps) {
   return (
-    <Stack spacing={spacing} direction={direction}>
+    <Stack spacing={spacing} direction={direction} sx={{ overflow: 'visible' }}>
       {fields.map((field) => (
         <FormField
           key={field.name}

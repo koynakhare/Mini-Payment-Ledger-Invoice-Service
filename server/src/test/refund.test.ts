@@ -16,20 +16,18 @@ import {
 } from './helpers.js';
 
 describe('refund', () => {
-  beforeEach(() => {
-    resetDatabase();
-  });
+  beforeEach(async () => { await resetDatabase(); });
 
   after(async () => {
     await teardownTestServer();
   });
 
   it('creates a reversing transaction without deleting the original payment transaction', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-01',
       totalCents: 125_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const pay = await gql<{ applyPayment: { id: string; transactionId: string } }>(
       `mutation ($input: ApplyPaymentInput!) {
@@ -54,16 +52,16 @@ describe('refund', () => {
       idempotencyKey: 'refund-rev-01',
     });
 
-    assert.ok(ledger.findTransactionById(paymentTxId));
-    assert.equal(new PaymentRepository().findByInvoiceId(invoice.id).length, 1);
+    assert.ok(await ledger.findTransactionById(paymentTxId));
+    assert.equal((await new PaymentRepository().findByInvoiceId(invoice.id)).length, 1);
   });
 
   it('keeps ledger integrity balanced after a full refund', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-BAL',
       totalCents: 64_800,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const pay = await gql<{ applyPayment: { id: string } }>(
       `mutation ($input: ApplyPaymentInput!) {
@@ -89,11 +87,11 @@ describe('refund', () => {
   });
 
   it('reverts a fully paid invoice to sent after a full refund', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-STATUS',
       totalCents: 80_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const pay = await gql<{ applyPayment: { id: string } }>(
       `mutation ($input: ApplyPaymentInput!) {
@@ -121,11 +119,11 @@ describe('refund', () => {
   });
 
   it('reverts a fully paid invoice to partially_paid after refunding one of two payments', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-PARTIAL-STATE',
       totalCents: 100_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const payA = await gql<{ applyPayment: { id: string } }>(
       `mutation ($input: ApplyPaymentInput!) {
@@ -158,11 +156,11 @@ describe('refund', () => {
   });
 
   it('rejects a second full refund on an already-refunded payment', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-EXCESS',
       totalCents: 50_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const pay = await gql<{ applyPayment: { id: string } }>(
       `mutation ($input: ApplyPaymentInput!) {
@@ -200,11 +198,11 @@ describe('refund', () => {
   });
 
   it('returns the same reversal for duplicate refund idempotency keys', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-REFUND-IDEM',
       totalCents: 33_300,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const pay = await gql<{ applyPayment: { id: string } }>(
       `mutation ($input: ApplyPaymentInput!) {

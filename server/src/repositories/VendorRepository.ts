@@ -1,6 +1,4 @@
-import { randomUUID } from 'crypto';
-import { getDb } from '../db/connection.js';
-import { allRows, oneRow } from '../db/sqliteRows.js';
+import { newId, nowIso, queryAll, queryOne, execute } from '../db/connection.js';
 import type { Vendor } from '../types/index.js';
 
 interface VendorRow {
@@ -20,25 +18,28 @@ function mapVendor(row: VendorRow): Vendor {
 }
 
 export class VendorRepository {
-  findAll(): Vendor[] {
-    const db = getDb();
-    const rows = allRows<VendorRow>(db.prepare('SELECT * FROM vendors ORDER BY name').all());
+  async findAll(): Promise<Vendor[]> {
+    const rows = await queryAll<VendorRow>('SELECT * FROM vendors ORDER BY name');
     return rows.map(mapVendor);
   }
 
-  findById(id: string): Vendor | null {
-    const db = getDb();
-    const row = oneRow<VendorRow>(db.prepare('SELECT * FROM vendors WHERE id = ?').get(id));
+  async findById(id: string): Promise<Vendor | null> {
+    const row = await queryOne<VendorRow>('SELECT * FROM vendors WHERE id = $1', [id]);
     return row ? mapVendor(row) : null;
   }
 
-  create(name: string, contactInfo?: string | null): Vendor {
-    const db = getDb();
-    const id = randomUUID();
-    const createdAt = new Date().toISOString();
-    db.prepare(
-      'INSERT INTO vendors (id, name, contact_info, created_at) VALUES (?, ?, ?, ?)'
-    ).run(id, name, contactInfo ?? null, createdAt);
+  async create(name: string, contactInfo?: string | null): Promise<Vendor> {
+    const id = newId();
+    const createdAt = nowIso();
+    await execute(
+      'INSERT INTO vendors (id, name, contact_info, created_at) VALUES ($1, $2, $3, $4)',
+      [id, name, contactInfo ?? null, createdAt]
+    );
     return { id, name, contactInfo: contactInfo ?? null, createdAt };
+  }
+
+  async updateContactInfo(id: string, contactInfo: string): Promise<Vendor | null> {
+    await execute('UPDATE vendors SET contact_info = $1 WHERE id = $2', [contactInfo, id]);
+    return this.findById(id);
   }
 }

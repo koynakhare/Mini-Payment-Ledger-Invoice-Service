@@ -219,7 +219,7 @@ export const typeDefs = gql`
     createAccount(input: CreateAccountInput!): CreateAccountPayload!
     recordTransaction(input: CreateTransactionInput!): Transaction!
     createInvoice(input: CreateInvoiceInput!): Invoice!
-    sendInvoice(invoiceId: ID!): Invoice!
+    sendInvoice(invoiceId: ID!, vendorEmail: String!): Invoice!
     applyPayment(input: ApplyPaymentInput!): Payment!
     reversePayment(input: ReversePaymentInput!): Reversal!
     markOverdueInvoices(asOfDate: String): [Invoice!]!

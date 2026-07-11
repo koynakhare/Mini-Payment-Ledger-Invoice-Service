@@ -3,7 +3,7 @@ import isEmpty from 'lodash/isEmpty.js';
 import trim from 'lodash/trim.js';
 import { ACCOUNT_TYPE_OPTIONS, ACCOUNT_TYPES } from '../../constants';
 import { AppDialog, FormFields, useFormState, type FormFieldConfig } from '../../components/form';
-import { useCreateAccountMutation } from '../../store/api';
+import { useCreateAccountMutation } from '../../api';
 import { useToast } from '../../components/ui/ToastProvider';
 import type { AccountType } from '../../types';
 import { getErrorMessage } from '../../utils/errors';

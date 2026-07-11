@@ -64,3 +64,49 @@ export const INVOICE_FIELDS = `
   createdAt
   updatedAt
 `;
+
+export const ACCOUNT_STATEMENT_FIELDS = `
+  transactionId
+  description
+  entryType
+  amountCents
+  runningBalanceCents
+  createdAt
+  referenceType
+  referenceId
+`;
+
+export const LEDGER_INTEGRITY_FIELDS = `
+  isBalanced
+  transactionCount
+  entryCount
+  currencyBalances {
+    currency
+    totalDebitsCents
+    totalCreditsCents
+    isBalanced
+  }
+`;
+
+export const PAYMENT_FIELDS = `
+  id
+  invoiceId
+  amountCents
+  originalAmountCents
+  originalCurrency
+  exchangeRateUsed
+  convertedAmountCents
+  netAmountCents
+  idempotencyKey
+  transactionId
+  createdAt
+`;
+
+export const REVERSAL_FIELDS = `
+  id
+  paymentId
+  amountCents
+  reversalType
+  reason
+  createdAt
+`;

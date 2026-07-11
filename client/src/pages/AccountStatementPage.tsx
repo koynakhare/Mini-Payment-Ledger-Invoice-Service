@@ -1,7 +1,7 @@
 import { Box, Chip, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGetAccountStatementQuery, useGetAccountsQuery } from '../store/api';
+import { useGetAccountStatementQuery, useGetAccountsQuery } from '../api';
 import { Breadcrumbs, Table, type TableColumn } from '../components/common';
 import { MoneyAmount } from '../components/ui/MoneyAmount';
 import { PageHeader } from '../components/ui/PageHeader';

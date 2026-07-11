@@ -95,8 +95,41 @@ Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `4001` | GraphQL server port |
-| `DATABASE_PATH` | `./data/ledger.db` | SQLite database file |
+| `DATABASE_PATH` | `./data/ledger.db` | SQLite file (local dev only — **data is lost on redeploy**) |
+| `DATABASE_URL` | — | **PostgreSQL connection string (Supabase) — use in production for persistent data** |
 | `VITE_GRAPHQL_URL` | `/graphql` | Frontend GraphQL endpoint |
+| `VITE_SUPABASE_URL` | — | Supabase project URL (optional — enables client login) |
+| `VITE_SUPABASE_ANON_KEY` | — | Supabase anon/public key |
+| `SUPABASE_URL` | — | Supabase project URL (optional — server JWT validation) |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Supabase service role key (server only) |
+
+### Persistent database with Supabase (recommended for deploy)
+
+SQLite stores data in a local file. On Render, Railway, Vercel, and similar hosts, that file is **wiped on every redeploy**. To keep your invoices, vendors, and payments:
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Go to **Project Settings → Database → Connection string**
+3. Copy the **URI** (use **Transaction pooler** on serverless hosts like Render)
+4. Add to your deployed backend environment:
+   ```
+   DATABASE_URL=postgresql://postgres.[ref]:[password]@...pooler.supabase.com:6543/postgres
+   ```
+5. Redeploy — tables are created automatically on startup, and data persists across deploys
+
+For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as before.
+
+### Optional: Supabase Auth
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. In **Project Settings → API**, copy:
+   - Project URL → `VITE_SUPABASE_URL` and `SUPABASE_URL`
+   - `anon` `public` key → `VITE_SUPABASE_ANON_KEY`
+   - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` (server `.env` only)
+3. In **Authentication → Providers**, enable Email
+4. Copy `client/.env.example` → `client/.env` and `server/.env.example` → `server/.env`, then fill in the values above
+5. Restart both dev servers
+
+When Supabase env vars are set, the app requires sign-in. Without them, the app runs without auth (local demo mode).
 
 ## What Was Prioritized
 
@@ -108,16 +141,15 @@ Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue 
 
 ## Intentionally Left Out
 
-- Authentication, multi-tenancy, and RBAC
+- Multi-tenancy and RBAC
 - Backend unit/integration tests (per spec)
-- Email delivery of invoices
+- Email delivery of invoices (vendor email is stored on send; no outbound mail yet)
 - Multi-currency support
 - Partial refunds (reversals reverse the full remaining net amount of a payment)
-- PostgreSQL (SQLite chosen for zero-config local setup; schema is portable)
 
 ## Known Limitations
 
-- SQLite with `node:sqlite` is suitable for local/demo use; production would use Postgres with row-level locking
+- SQLite is used for local dev when `DATABASE_URL` is unset; production should set `DATABASE_URL` to Supabase Postgres
 - Invoice posting uses a simplified 2-entry journal (expense + vendor) rather than a full AP sub-ledger with control account reconciliation
 - The overdue job is manual/cron-triggered, not a background scheduler
 - No pagination on list queries

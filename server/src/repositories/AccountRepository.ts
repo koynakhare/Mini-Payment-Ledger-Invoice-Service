@@ -1,6 +1,4 @@
-import { randomUUID } from 'crypto';
-import { getDb } from '../db/connection.js';
-import { allRows, oneRow } from '../db/sqliteRows.js';
+import { newId, nowIso, queryAll, queryOne, execute } from '../db/connection.js';
 import type { Account, AccountType } from '../types/index.js';
 
 interface AccountRow {
@@ -26,61 +24,59 @@ function mapAccount(row: AccountRow): Account {
 }
 
 export class AccountRepository {
-  findAll(): Account[] {
-    const db = getDb();
-    const rows = allRows<AccountRow>(db.prepare('SELECT * FROM accounts ORDER BY name').all());
+  async findAll(): Promise<Account[]> {
+    const rows = await queryAll<AccountRow>('SELECT * FROM accounts ORDER BY name');
     return rows.map(mapAccount);
   }
 
-  findById(id: string): Account | null {
-    const db = getDb();
-    const row = oneRow<AccountRow>(db.prepare('SELECT * FROM accounts WHERE id = ?').get(id));
+  async findById(id: string): Promise<Account | null> {
+    const row = await queryOne<AccountRow>('SELECT * FROM accounts WHERE id = $1', [id]);
     return row ? mapAccount(row) : null;
   }
 
-  findByType(accountType: AccountType): Account[] {
-    const db = getDb();
-    const rows = allRows<AccountRow>(
-      db.prepare('SELECT * FROM accounts WHERE account_type = ? ORDER BY name').all(accountType)
+  async findByType(accountType: AccountType): Promise<Account[]> {
+    const rows = await queryAll<AccountRow>(
+      'SELECT * FROM accounts WHERE account_type = $1 ORDER BY name',
+      [accountType]
     );
     return rows.map(mapAccount);
   }
 
-  findByVendorId(vendorId: string): Account | null {
-    const db = getDb();
-    const row = oneRow<AccountRow>(
-      db.prepare('SELECT * FROM accounts WHERE vendor_id = ?').get(vendorId)
+  async findByVendorId(vendorId: string): Promise<Account | null> {
+    const row = await queryOne<AccountRow>(
+      'SELECT * FROM accounts WHERE vendor_id = $1',
+      [vendorId]
     );
     return row ? mapAccount(row) : null;
   }
 
-  findByNameIgnoreCase(name: string): Account | null {
-    const db = getDb();
-    const row = oneRow<AccountRow>(
-      db.prepare('SELECT * FROM accounts WHERE LOWER(name) = LOWER(?)').get(name)
+  async findByNameIgnoreCase(name: string): Promise<Account | null> {
+    const row = await queryOne<AccountRow>(
+      'SELECT * FROM accounts WHERE LOWER(name) = LOWER($1)',
+      [name]
     );
     return row ? mapAccount(row) : null;
   }
 
-  create(name: string, accountType: AccountType, vendorId?: string | null): Account {
-    const db = getDb();
-    const id = randomUUID();
-    const createdAt = new Date().toISOString();
-    db.prepare(
-      'INSERT INTO accounts (id, name, account_type, vendor_id, created_at) VALUES (?, ?, ?, ?, ?)'
-    ).run(id, name, accountType, vendorId ?? null, createdAt);
+  async create(name: string, accountType: AccountType, vendorId?: string | null): Promise<Account> {
+    const id = newId();
+    const createdAt = nowIso();
+    await execute(
+      'INSERT INTO accounts (id, name, account_type, vendor_id, created_at) VALUES ($1, $2, $3, $4, $5)',
+      [id, name, accountType, vendorId ?? null, createdAt]
+    );
     return { id, name, accountType, vendorId: vendorId ?? null, createdAt };
   }
 
-  getBalanceCents(accountId: string): number {
-    const db = getDb();
-    const result = oneRow<BalanceRow>(db.prepare(`
-      SELECT
+  async getBalanceCents(accountId: string): Promise<number> {
+    const result = await queryOne<BalanceRow>(
+      `SELECT
         COALESCE(SUM(CASE WHEN entry_type = 'credit' THEN amount_cents ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN entry_type = 'debit' THEN amount_cents ELSE 0 END), 0) AS balance
       FROM ledger_entries
-      WHERE account_id = ?
-    `).get(accountId));
+      WHERE account_id = $1`,
+      [accountId]
+    );
     return result?.balance ?? 0;
   }
 }

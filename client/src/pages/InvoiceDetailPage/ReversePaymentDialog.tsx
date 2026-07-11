@@ -3,7 +3,7 @@ import { Typography } from '@mui/material';
 import { AppDialog, FormFields, useFormState, type FormFieldConfig } from '../../components/form';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { useToast } from '../../components/ui/ToastProvider';
-import { useReversePaymentMutation } from '../../store/api';
+import { useReversePaymentMutation } from '../../api';
 import type { CurrencyCode, Payment, ReversalType } from '../../types';
 import { generateIdempotencyKey } from '../../utils/format';
 import { getErrorMessage } from '../../utils/errors';

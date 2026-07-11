@@ -14,20 +14,18 @@ import {
 } from './helpers.js';
 
 describe('payment', () => {
-  beforeEach(() => {
-    resetDatabase();
-  });
+  beforeEach(async () => { await resetDatabase(); });
 
   after(async () => {
     await teardownTestServer();
   });
 
   it('marks invoice paid after a full payment', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-PAY-FULL',
       totalCents: 156_780,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -42,11 +40,11 @@ describe('payment', () => {
   });
 
   it('marks invoice partially_paid after a partial payment', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-PARTIAL-01',
       totalCents: 427_583,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -61,11 +59,11 @@ describe('payment', () => {
   });
 
   it('marks invoice paid after multiple partial payments sum to total', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-PARTIAL-MULTI',
       totalCents: 300_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const parts = [95_000, 82_500, 72_500, 50_000];
     for (let i = 0; i < parts.length; i += 1) {
@@ -82,11 +80,11 @@ describe('payment', () => {
   });
 
   it('reduces remaining balance by exactly each partial payment amount', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-DRIFT',
       totalCents: 999_999,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const payments = [33_333, 44_444, 55_555];
     let expectedRemaining = 999_999;
@@ -103,11 +101,11 @@ describe('payment', () => {
   });
 
   it('rejects a payment greater than remaining balance', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-OVER-01',
       totalCents: 50_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const message = await gqlExpectError(
       `mutation ($input: ApplyPaymentInput!) {
@@ -128,11 +126,11 @@ describe('payment', () => {
   });
 
   it('does not create a payment row when overpayment is rejected', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-OVER-NO-TX',
       totalCents: 50_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await gqlExpectError(
       `mutation ($input: ApplyPaymentInput!) {
@@ -147,16 +145,16 @@ describe('payment', () => {
       }
     );
 
-    assert.equal(countPaymentsForInvoice(invoice.id), 0);
-    assert.equal(countPaymentTransactionsForInvoice(invoice.id), 0);
+    assert.equal(await countPaymentsForInvoice(invoice.id), 0);
+    assert.equal(await countPaymentTransactionsForInvoice(invoice.id), 0);
   });
 
   it('rejects cumulative overpayment across prior payments', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-OVER-CUMUL',
       totalCents: 100_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -183,11 +181,11 @@ describe('payment', () => {
   });
 
   it('creates exactly one payment transaction for a new idempotency key', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-IDEM-NEW',
       totalCents: 40_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -195,18 +193,18 @@ describe('payment', () => {
       idempotencyKey: 'webhook-ch-new',
     });
 
-    assert.equal(countPaymentsForInvoice(invoice.id), 1);
-    assert.equal(countPaymentTransactionsForInvoice(invoice.id), 1);
+    assert.equal(await countPaymentsForInvoice(invoice.id), 1);
+    assert.equal(await countPaymentTransactionsForInvoice(invoice.id), 1);
     const updated = await queryInvoice(invoice.id);
     assert.equal(updated.paidCents, 40_000);
   });
 
   it('does not double-count when the same idempotency key is submitted twice', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-IDEM-DUP',
       totalCents: 62_500,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const key = 'webhook-retry-001';
     const first = await gql<{ applyPayment: { id: string } }>(
@@ -225,18 +223,18 @@ describe('payment', () => {
     assert.equal(first.errors, undefined);
     assert.equal(second.errors, undefined);
     assert.equal(first.data!.applyPayment.id, second.data!.applyPayment.id);
-    assert.equal(countPaymentsForInvoice(invoice.id), 1);
+    assert.equal(await countPaymentsForInvoice(invoice.id), 1);
 
     const updated = await queryInvoice(invoice.id);
     assert.equal(updated.paidCents, 30_000);
   });
 
   it('leaves paid total unchanged after a duplicate idempotency key retry', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-IDEM-STABLE',
       totalCents: 20_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     const key = 'webhook-stable';
     await mutateApplyPayment({
@@ -254,15 +252,15 @@ describe('payment', () => {
     const after = await queryInvoice(invoice.id);
 
     assert.deepEqual(after, before);
-    assert.equal(countPaymentTransactionsForInvoice(invoice.id), 1);
+    assert.equal(await countPaymentTransactionsForInvoice(invoice.id), 1);
   });
 
   it('allows separate payments with different idempotency keys', async () => {
-    const { invoice } = createVendorWithInvoice({
+    const { invoice } = await createVendorWithInvoice({
       invoiceNumber: 'INV-IDEM-SEPARATE',
       totalCents: 90_000,
     });
-    sendInvoice(invoice.id);
+    await sendInvoice(invoice.id);
 
     await mutateApplyPayment({
       invoiceId: invoice.id,
@@ -277,7 +275,7 @@ describe('payment', () => {
 
     const updated = await queryInvoice(invoice.id);
     assert.equal(updated.paidCents, 60_000);
-    assert.equal(countPaymentsForInvoice(invoice.id), 2);
-    assert.equal(countPaymentTransactionsForInvoice(invoice.id), 2);
+    assert.equal(await countPaymentsForInvoice(invoice.id), 2);
+    assert.equal(await countPaymentTransactionsForInvoice(invoice.id), 2);
   });
 });

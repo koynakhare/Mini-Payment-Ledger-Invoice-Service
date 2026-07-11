@@ -28,9 +28,9 @@ function formatError(error: unknown): never {
 }
 
 function wrap<T extends (...args: never[]) => unknown>(fn: T): T {
-  return ((...args: Parameters<T>) => {
+  return (async (...args: Parameters<T>) => {
     try {
-      return fn(...args);
+      return await fn(...args);
     } catch (error) {
       return formatError(error);
     }
@@ -51,8 +51,8 @@ export const resolvers = {
       invoiceService.listInvoices(status as Parameters<typeof invoiceService.listInvoices>[0])
     ),
     invoice: wrap((_: unknown, { id }: { id: string }) => invoiceService.getInvoice(id)),
-    transaction: wrap((_: unknown, { id }: { id: string }) => {
-      const tx = ledger.findTransactionById(id);
+    transaction: wrap(async (_: unknown, { id }: { id: string }) => {
+      const tx = await ledger.findTransactionById(id);
       if (!tx) {
         throw new GraphQLError(`Transaction not found: ${id}`, {
           extensions: { code: 'NOT_FOUND' },
@@ -67,23 +67,22 @@ export const resolvers = {
       (_: unknown, { input }: { input: Parameters<typeof vendorService.createVendor>[0] }) =>
         vendorService.createVendor(input)
     ),
-    createAccount: (
-      _: unknown,
-      { input }: { input: Parameters<typeof accountService.createAccount>[0] }
-    ) => {
-      try {
-        const account = accountService.createAccount(input);
-        return { account, error: null };
-      } catch (error) {
-        if (
-          isAppError(error) &&
-          (error.code === 'VALIDATION_ERROR' || error.code === 'CONFLICT')
-        ) {
-          return { account: null, error: error.message };
+    createAccount: wrap(
+      async (_: unknown, { input }: { input: Parameters<typeof accountService.createAccount>[0] }) => {
+        try {
+          const account = await accountService.createAccount(input);
+          return { account, error: null };
+        } catch (error) {
+          if (
+            isAppError(error) &&
+            (error.code === 'VALIDATION_ERROR' || error.code === 'CONFLICT')
+          ) {
+            return { account: null, error: error.message };
+          }
+          return formatError(error);
         }
-        return formatError(error);
       }
-    },
+    ),
     recordTransaction: wrap(
       (_: unknown, { input }: { input: Parameters<typeof accountService.recordTransaction>[0] }) =>
         accountService.recordTransaction(input)
@@ -92,8 +91,9 @@ export const resolvers = {
       (_: unknown, { input }: { input: Parameters<typeof invoiceService.createInvoice>[0] }) =>
         invoiceService.createInvoice(input)
     ),
-    sendInvoice: wrap((_: unknown, { invoiceId }: { invoiceId: string }) =>
-      invoiceService.sendInvoice(invoiceId)
+    sendInvoice: wrap(
+      (_: unknown, { invoiceId, vendorEmail }: { invoiceId: string; vendorEmail: string }) =>
+        invoiceService.sendInvoice(invoiceId, vendorEmail)
     ),
     applyPayment: wrap(
       (_: unknown, { input }: { input: Parameters<typeof paymentService.applyPayment>[0] }) =>

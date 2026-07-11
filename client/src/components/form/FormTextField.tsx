@@ -9,6 +9,8 @@ interface FormTextFieldProps {
 }
 
 export function FormTextField({ field, value, onChange }: FormTextFieldProps) {
+  const shouldShrinkLabel = field.inputLabelShrink || !!value || field.autoFocus;
+
   return (
     <TextField
       label={field.label}
@@ -23,7 +25,8 @@ export function FormTextField({ field, value, onChange }: FormTextFieldProps) {
       multiline={field.multiline}
       rows={field.rows}
       autoFocus={field.autoFocus}
-      InputLabelProps={field.inputLabelShrink ? { shrink: true } : undefined}
+      InputLabelProps={shouldShrinkLabel ? { shrink: true } : undefined}
+      sx={{ overflow: 'visible' }}
     />
   );
 }

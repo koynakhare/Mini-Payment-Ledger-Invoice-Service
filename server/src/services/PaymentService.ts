@@ -1,6 +1,6 @@
 import isEmpty from 'lodash/isEmpty.js';
 import trim from 'lodash/trim.js';
-import { runInTransaction } from '../db/connection.js';
+import { isPostgres, runInTransaction, withSqliteQueue } from '../db/connection.js';
 import { CURRENCY_CONFIG } from '../config/currencyConfig.js';
 import { AppError } from '../errors/AppError.js';
 import { InvoiceRepository } from '../repositories/InvoiceRepository.js';
@@ -24,17 +24,24 @@ export class PaymentService {
   private readonly vendors = new VendorService();
   private readonly systemAccounts = new SystemAccountService();
 
-  getPaymentsForInvoice(invoiceId: string): Payment[] {
-    this.invoiceService.getInvoice(invoiceId);
+  async getPaymentsForInvoice(invoiceId: string): Promise<Payment[]> {
+    await this.invoiceService.getInvoice(invoiceId);
     return this.payments.findByInvoiceId(invoiceId);
   }
 
-  getReversalsForInvoice(invoiceId: string): Reversal[] {
-    this.invoiceService.getInvoice(invoiceId);
+  async getReversalsForInvoice(invoiceId: string): Promise<Reversal[]> {
+    await this.invoiceService.getInvoice(invoiceId);
     return this.payments.findReversalsByInvoiceId(invoiceId);
   }
 
-  applyPayment(input: ApplyPaymentInput): Payment {
+  async applyPayment(input: ApplyPaymentInput): Promise<Payment> {
+    if (!isPostgres()) {
+      return withSqliteQueue(() => this.applyPaymentCore(input));
+    }
+    return this.applyPaymentCore(input);
+  }
+
+  private async applyPaymentCore(input: ApplyPaymentInput): Promise<Payment> {
     const idempotencyKey = trim(input.idempotencyKey);
     if (isEmpty(idempotencyKey)) {
       throw new AppError('VALIDATION_ERROR', 'Idempotency key is required');
@@ -43,13 +50,13 @@ export class PaymentService {
       throw new AppError('VALIDATION_ERROR', 'Payment amount must be positive');
     }
 
-    const existing = this.payments.findByIdempotencyKey(idempotencyKey);
+    const existing = await this.payments.findByIdempotencyKey(idempotencyKey);
     if (existing) {
       return existing;
     }
 
-    return runInTransaction(() => {
-      const invoice = this.invoices.findByIdForUpdate(input.invoiceId);
+    return runInTransaction(async () => {
+      const invoice = await this.invoices.findByIdForUpdate(input.invoiceId);
       if (!invoice) {
         throw new AppError('NOT_FOUND', `Invoice not found: ${input.invoiceId}`);
       }
@@ -58,7 +65,7 @@ export class PaymentService {
         throw new AppError('INVALID_STATUS', `Cannot pay invoice in status: ${invoice.status}`);
       }
 
-      const duplicate = this.payments.findByIdempotencyKey(idempotencyKey);
+      const duplicate = await this.payments.findByIdempotencyKey(idempotencyKey);
       if (duplicate) {
         return duplicate;
       }
@@ -75,8 +82,8 @@ export class PaymentService {
       );
       const exchangeRateUsed = resolveExchangeRateUsed(originalCurrency, invoiceCurrency);
 
-      const totalCents = this.invoices.getTotalCents(input.invoiceId);
-      const netPaid = this.payments.getNetPaidCents(input.invoiceId);
+      const totalCents = await this.invoices.getTotalCents(input.invoiceId);
+      const netPaid = await this.payments.getNetPaidCents(input.invoiceId);
       const remaining = totalCents - netPaid;
 
       if (convertedAmountCents > remaining) {
@@ -93,8 +100,8 @@ export class PaymentService {
         );
       }
 
-      const vendorPayable = this.vendors.getVendorPayableAccount(invoice.vendorId);
-      const companyBank = this.systemAccounts.getCompanyBankAccount();
+      const vendorPayable = await this.vendors.getVendorPayableAccount(invoice.vendorId);
+      const companyBank = await this.systemAccounts.getCompanyBankAccount();
 
       const entries = this.buildPaymentEntries(
         vendorPayable.id,
@@ -103,14 +110,14 @@ export class PaymentService {
         invoiceCurrency
       );
 
-      const transaction = this.ledger.insertTransaction(
+      const transaction = await this.ledger.insertTransaction(
         `Payment on invoice ${invoice.invoiceNumber}`,
         entries,
         'payment',
         input.invoiceId
       );
 
-      const payment = this.payments.create({
+      const payment = await this.payments.create({
         invoiceId: input.invoiceId,
         transactionId: transaction.id,
         convertedAmountCents,
@@ -120,41 +127,41 @@ export class PaymentService {
         idempotencyKey,
       });
 
-      const newStatus = this.invoiceService.resolveStatusFromPayment(input.invoiceId);
-      this.invoices.updateStatus(input.invoiceId, newStatus);
+      const newStatus = await this.invoiceService.resolveStatusFromPayment(input.invoiceId);
+      await this.invoices.updateStatus(input.invoiceId, newStatus);
 
       return payment;
     });
   }
 
-  reversePayment(input: ReversePaymentInput): Reversal {
+  async reversePayment(input: ReversePaymentInput): Promise<Reversal> {
     const idempotencyKey = trim(input.idempotencyKey);
     if (isEmpty(idempotencyKey)) {
       throw new AppError('VALIDATION_ERROR', 'Idempotency key is required');
     }
 
-    const existing = this.payments.findReversalByIdempotencyKey(idempotencyKey);
+    const existing = await this.payments.findReversalByIdempotencyKey(idempotencyKey);
     if (existing) {
       return existing;
     }
 
-    const payment = this.payments.findById(input.paymentId);
+    const payment = await this.payments.findById(input.paymentId);
     if (!payment) {
       throw new AppError('NOT_FOUND', `Payment not found: ${input.paymentId}`);
     }
 
-    const netRemaining = this.payments.getNetPaidForPayment(input.paymentId);
+    const netRemaining = await this.payments.getNetPaidForPayment(input.paymentId);
     if (netRemaining <= 0) {
       throw new AppError('VALIDATION_ERROR', 'Payment has already been fully reversed');
     }
 
-    const invoice = this.invoices.findById(payment.invoiceId);
+    const invoice = await this.invoices.findById(payment.invoiceId);
     if (!invoice) {
       throw new AppError('NOT_FOUND', `Invoice not found for payment`);
     }
 
-    const vendorPayable = this.vendors.getVendorPayableAccount(invoice.vendorId);
-    const companyBank = this.systemAccounts.getCompanyBankAccount();
+    const vendorPayable = await this.vendors.getVendorPayableAccount(invoice.vendorId);
+    const companyBank = await this.systemAccounts.getCompanyBankAccount();
 
     const reversalAmount = netRemaining;
     const label =
@@ -169,14 +176,14 @@ export class PaymentService {
       invoice.currency
     );
 
-    const transaction = this.ledger.insertTransaction(
+    const transaction = await this.ledger.insertTransaction(
       label,
       entries,
       input.reversalType,
       payment.id
     );
 
-    const reversal = this.payments.createReversal(
+    const reversal = await this.payments.createReversal(
       payment.id,
       transaction.id,
       reversalAmount,
@@ -185,8 +192,8 @@ export class PaymentService {
       input.reason
     );
 
-    const newStatus = this.invoiceService.resolveStatusFromPayment(invoice.id);
-    this.invoices.updateStatus(invoice.id, newStatus);
+    const newStatus = await this.invoiceService.resolveStatusFromPayment(invoice.id);
+    await this.invoices.updateStatus(invoice.id, newStatus);
 
     return reversal;
   }

@@ -1,5 +1,4 @@
 import { ApolloServer } from '@apollo/server';
-import sumBy from 'lodash/sumBy.js';
 import { closeDb } from '../db/connection.js';
 import { runMigrations } from '../db/migrations.js';
 import { resolvers } from '../graphql/resolvers.js';
@@ -17,12 +16,13 @@ import type { CurrencyCode, Invoice } from '../types/index.js';
 
 let apolloServer: ApolloServer | null = null;
 
-export function resetDatabase(): void {
-  closeDb();
+export async function resetDatabase(): Promise<void> {
+  await closeDb();
+  delete process.env.DATABASE_URL;
   process.env.DATABASE_PATH = ':memory:';
-  runMigrations();
-  systemAccountService.ensureCompanyBankAccount();
-  systemAccountService.ensureExpenseAccount();
+  await runMigrations();
+  await systemAccountService.ensureCompanyBankAccount();
+  await systemAccountService.ensureExpenseAccount();
 }
 
 export async function getTestServer(): Promise<ApolloServer> {
@@ -38,8 +38,9 @@ export async function teardownTestServer(): Promise<void> {
     await apolloServer.stop();
     apolloServer = null;
   }
-  closeDb();
+  await closeDb();
   delete process.env.DATABASE_PATH;
+  delete process.env.DATABASE_URL;
 }
 
 export interface GqlResult<T> {
@@ -151,12 +152,12 @@ export async function mutateCreateInvoice(input: {
   );
 }
 
-export async function mutateSendInvoice(invoiceId: string) {
+export async function mutateSendInvoice(invoiceId: string, vendorEmail = 'vendor@test.com') {
   return gqlData<{ sendInvoice: { id: string; status: string } }>(
-    `mutation ($invoiceId: ID!) {
-      sendInvoice(invoiceId: $invoiceId) { id status }
+    `mutation ($invoiceId: ID!, $vendorEmail: String!) {
+      sendInvoice(invoiceId: $invoiceId, vendorEmail: $vendorEmail) { id status }
     }`,
-    { invoiceId }
+    { invoiceId, vendorEmail }
   );
 }
 
@@ -213,18 +214,23 @@ export async function queryInvoice(invoiceId: string) {
   return data.invoice;
 }
 
-export function sumAllAccountBalances(): number {
-  const accounts = new AccountRepository();
-  const all = accounts.findAll();
-  return sumBy(all, (account) => accounts.getBalanceCents(account.id));
+export async function sumAllAccountBalances(): Promise<number> {
+  const accountsRepo = new AccountRepository();
+  const all = await accountsRepo.findAll();
+  let total = 0;
+  for (const account of all) {
+    total += await accountsRepo.getBalanceCents(account.id);
+  }
+  return total;
 }
 
-export function countPaymentsForInvoice(invoiceId: string): number {
-  return new PaymentRepository().findByInvoiceId(invoiceId).length;
+export async function countPaymentsForInvoice(invoiceId: string): Promise<number> {
+  const payments = await new PaymentRepository().findByInvoiceId(invoiceId);
+  return payments.length;
 }
 
-export function countPaymentTransactionsForInvoice(invoiceId: string): number {
-  const payments = new PaymentRepository().findByInvoiceId(invoiceId);
+export async function countPaymentTransactionsForInvoice(invoiceId: string): Promise<number> {
+  const payments = await new PaymentRepository().findByInvoiceId(invoiceId);
   return payments.length;
 }
 
@@ -262,16 +268,16 @@ export async function queryTransactionEntries(transactionId: string) {
   );
 }
 
-export function createVendorWithInvoice(options?: {
+export async function createVendorWithInvoice(options?: {
   invoiceNumber?: string;
   dueDate?: string;
   totalCents?: number;
   currency?: CurrencyCode;
   description?: string;
 }) {
-  const vendor = vendorService.createVendor({ name: 'Acme Freight Co.' });
+  const vendor = await vendorService.createVendor({ name: 'Acme Freight Co.' });
   const totalCents = options?.totalCents ?? 427_583;
-  const invoice = invoiceService.createInvoice({
+  const invoice = await invoiceService.createInvoice({
     vendorId: vendor.id,
     invoiceNumber: options?.invoiceNumber ?? `INV-${Date.now()}`,
     dueDate: options?.dueDate ?? '2026-12-31',
@@ -287,8 +293,8 @@ export function createVendorWithInvoice(options?: {
   return { vendor, invoice };
 }
 
-export function sendInvoice(invoiceId: string) {
-  return invoiceService.sendInvoice(invoiceId);
+export async function sendInvoice(invoiceId: string, vendorEmail = 'vendor@test.com') {
+  return invoiceService.sendInvoice(invoiceId, vendorEmail);
 }
 
 export { accountService, invoiceService, paymentService, vendorService };

@@ -1,7 +1,5 @@
-import { randomUUID } from 'crypto';
 import sumBy from 'lodash/sumBy.js';
-import { getDb } from '../db/connection.js';
-import { allRows, oneRow } from '../db/sqliteRows.js';
+import { newId, nowIso, queryAll, queryOne, execute } from '../db/connection.js';
 import type { CurrencyCode } from '../config/currencyConfig.js';
 import type { Payment, Reversal, ReversalType } from '../types/index.js';
 
@@ -73,73 +71,72 @@ export interface CreatePaymentData {
 }
 
 export class PaymentRepository {
-  findByInvoiceId(invoiceId: string): Payment[] {
-    const db = getDb();
-    const rows = allRows<PaymentRow>(
-      db.prepare('SELECT * FROM payments WHERE invoice_id = ? ORDER BY created_at ASC').all(invoiceId)
+  async findByInvoiceId(invoiceId: string): Promise<Payment[]> {
+    const rows = await queryAll<PaymentRow>(
+      'SELECT * FROM payments WHERE invoice_id = $1 ORDER BY created_at ASC',
+      [invoiceId]
     );
     return rows.map(mapPayment);
   }
 
-  findById(id: string): Payment | null {
-    const db = getDb();
-    const row = oneRow<PaymentRow>(db.prepare('SELECT * FROM payments WHERE id = ?').get(id));
+  async findById(id: string): Promise<Payment | null> {
+    const row = await queryOne<PaymentRow>('SELECT * FROM payments WHERE id = $1', [id]);
     return row ? mapPayment(row) : null;
   }
 
-  findByIdempotencyKey(key: string): Payment | null {
-    const db = getDb();
-    const row = oneRow<PaymentRow>(
-      db.prepare('SELECT * FROM payments WHERE idempotency_key = ?').get(key)
+  async findByIdempotencyKey(key: string): Promise<Payment | null> {
+    const row = await queryOne<PaymentRow>(
+      'SELECT * FROM payments WHERE idempotency_key = $1',
+      [key]
     );
     return row ? mapPayment(row) : null;
   }
 
-  getNetPaidCents(invoiceId: string): number {
-    const db = getDb();
-    const payments = this.findByInvoiceId(invoiceId);
+  async getNetPaidCents(invoiceId: string): Promise<number> {
+    const payments = await this.findByInvoiceId(invoiceId);
     const paymentTotal = sumBy(payments, 'convertedAmountCents');
 
-    const reversalTotal = oneRow<TotalRow>(db.prepare(`
-      SELECT COALESCE(SUM(r.amount_cents), 0) AS total
-      FROM reversals r
-      JOIN payments p ON p.id = r.payment_id
-      WHERE p.invoice_id = ?
-    `).get(invoiceId));
+    const reversalTotal = await queryOne<TotalRow>(
+      `SELECT COALESCE(SUM(r.amount_cents), 0) AS total
+       FROM reversals r
+       JOIN payments p ON p.id = r.payment_id
+       WHERE p.invoice_id = $1`,
+      [invoiceId]
+    );
 
     return paymentTotal - (reversalTotal?.total ?? 0);
   }
 
-  getNetPaidForPayment(paymentId: string): number {
-    const payment = this.findById(paymentId);
+  async getNetPaidForPayment(paymentId: string): Promise<number> {
+    const payment = await this.findById(paymentId);
     if (!payment) return 0;
-    const reversals = this.findReversalsByPaymentId(paymentId);
+    const reversals = await this.findReversalsByPaymentId(paymentId);
     const reversed = sumBy(reversals, 'amountCents');
     return payment.convertedAmountCents - reversed;
   }
 
-  create(data: CreatePaymentData): Payment {
-    const db = getDb();
-    const id = randomUUID();
-    const createdAt = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO payments (
+  async create(data: CreatePaymentData): Promise<Payment> {
+    const id = newId();
+    const createdAt = nowIso();
+    await execute(
+      `INSERT INTO payments (
         id, invoice_id, transaction_id, amount_cents,
         original_amount_cents, original_currency, exchange_rate_used, converted_amount_cents,
         idempotency_key, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      data.invoiceId,
-      data.transactionId,
-      data.convertedAmountCents,
-      data.originalAmountCents,
-      data.originalCurrency,
-      data.exchangeRateUsed,
-      data.convertedAmountCents,
-      data.idempotencyKey,
-      createdAt
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [
+        id,
+        data.invoiceId,
+        data.transactionId,
+        data.convertedAmountCents,
+        data.originalAmountCents,
+        data.originalCurrency,
+        data.exchangeRateUsed,
+        data.convertedAmountCents,
+        data.idempotencyKey,
+        createdAt,
+      ]
     );
     return mapPayment({
       id,
@@ -155,48 +152,48 @@ export class PaymentRepository {
     });
   }
 
-  findReversalsByPaymentId(paymentId: string): Reversal[] {
-    const db = getDb();
-    const rows = allRows<ReversalRow>(
-      db.prepare('SELECT * FROM reversals WHERE payment_id = ? ORDER BY created_at ASC').all(paymentId)
+  async findReversalsByPaymentId(paymentId: string): Promise<Reversal[]> {
+    const rows = await queryAll<ReversalRow>(
+      'SELECT * FROM reversals WHERE payment_id = $1 ORDER BY created_at ASC',
+      [paymentId]
     );
     return rows.map(mapReversal);
   }
 
-  findReversalsByInvoiceId(invoiceId: string): Reversal[] {
-    const db = getDb();
-    const rows = allRows<ReversalRow>(db.prepare(`
-      SELECT r.* FROM reversals r
-      JOIN payments p ON p.id = r.payment_id
-      WHERE p.invoice_id = ?
-      ORDER BY r.created_at ASC
-    `).all(invoiceId));
+  async findReversalsByInvoiceId(invoiceId: string): Promise<Reversal[]> {
+    const rows = await queryAll<ReversalRow>(
+      `SELECT r.* FROM reversals r
+       JOIN payments p ON p.id = r.payment_id
+       WHERE p.invoice_id = $1
+       ORDER BY r.created_at ASC`,
+      [invoiceId]
+    );
     return rows.map(mapReversal);
   }
 
-  findReversalByIdempotencyKey(key: string): Reversal | null {
-    const db = getDb();
-    const row = oneRow<ReversalRow>(
-      db.prepare('SELECT * FROM reversals WHERE idempotency_key = ?').get(key)
+  async findReversalByIdempotencyKey(key: string): Promise<Reversal | null> {
+    const row = await queryOne<ReversalRow>(
+      'SELECT * FROM reversals WHERE idempotency_key = $1',
+      [key]
     );
     return row ? mapReversal(row) : null;
   }
 
-  createReversal(
+  async createReversal(
     paymentId: string,
     transactionId: string,
     amountCents: number,
     reversalType: ReversalType,
     idempotencyKey: string,
     reason?: string
-  ): Reversal {
-    const db = getDb();
-    const id = randomUUID();
-    const createdAt = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO reversals (id, payment_id, transaction_id, amount_cents, reversal_type, idempotency_key, reason, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, paymentId, transactionId, amountCents, reversalType, idempotencyKey, reason ?? null, createdAt);
+  ): Promise<Reversal> {
+    const id = newId();
+    const createdAt = nowIso();
+    await execute(
+      `INSERT INTO reversals (id, payment_id, transaction_id, amount_cents, reversal_type, idempotency_key, reason, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, paymentId, transactionId, amountCents, reversalType, idempotencyKey, reason ?? null, createdAt]
+    );
     return {
       id,
       paymentId,

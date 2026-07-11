@@ -16,8 +16,8 @@ import {
 } from './helpers.js';
 
 describe('ledger', () => {
-  beforeEach(() => {
-    resetDatabase();
+  beforeEach(async () => {
+    await resetDatabase();
   });
 
   after(async () => {
@@ -141,7 +141,7 @@ describe('ledger', () => {
       assert.equal(row.totalDebitsCents, row.totalCreditsCents);
       assert.equal(row.isBalanced, true);
     }
-    assert.equal(sumAllAccountBalances(), 0);
+    assert.equal(await sumAllAccountBalances(), 0);
   });
 
   it('rejects an unbalanced transaction', async () => {
@@ -207,7 +207,7 @@ describe('ledger', () => {
     }
 
     assert.equal(await queryAccountBalance(accountId), -(unit * iterations));
-    const entries = new LedgerRepository().findEntriesByAccountId(accountId);
+    const entries = await new LedgerRepository().findEntriesByAccountId(accountId);
     assert.ok(entries.every((e) => Number.isInteger(e.amountCents)));
     assert.equal(sumBy(entries, 'amountCents'), unit * iterations);
   });

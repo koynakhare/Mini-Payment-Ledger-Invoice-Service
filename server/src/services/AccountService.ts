@@ -15,42 +15,42 @@ export class AccountService {
   private readonly accounts = new AccountRepository();
   private readonly ledger = new LedgerRepository();
 
-  listAccounts(): Account[] {
+  async listAccounts(): Promise<Account[]> {
     return this.accounts.findAll();
   }
 
-  getAccount(id: string): Account {
-    const account = this.accounts.findById(id);
+  async getAccount(id: string): Promise<Account> {
+    const account = await this.accounts.findById(id);
     if (!account) {
       throw new AppError('NOT_FOUND', `Account not found: ${id}`);
     }
     return account;
   }
 
-  createAccount(input: CreateAccountInput): Account {
+  async createAccount(input: CreateAccountInput): Promise<Account> {
     const name = trim(input.name);
     if (isEmpty(name)) {
       throw new AppError('VALIDATION_ERROR', 'Account name is required');
     }
 
-    if (this.accounts.findByNameIgnoreCase(name)) {
+    if (await this.accounts.findByNameIgnoreCase(name)) {
       throw new AppError('CONFLICT', 'An account with this name already exists');
     }
 
     return this.accounts.create(name, input.accountType);
   }
 
-  getBalanceCents(accountId: string): number {
-    this.getAccount(accountId);
+  async getBalanceCents(accountId: string): Promise<number> {
+    await this.getAccount(accountId);
     return this.accounts.getBalanceCents(accountId);
   }
 
-  getStatement(accountId: string): AccountStatementLine[] {
-    this.getAccount(accountId);
+  async getStatement(accountId: string): Promise<AccountStatementLine[]> {
+    await this.getAccount(accountId);
     return this.ledger.buildAccountStatement(accountId);
   }
 
-  recordTransaction(input: CreateTransactionInput) {
+  async recordTransaction(input: CreateTransactionInput) {
     if (isEmpty(trim(input.description))) {
       throw new AppError('VALIDATION_ERROR', 'Transaction description is required');
     }
@@ -59,7 +59,7 @@ export class AccountService {
     }
 
     for (const entry of input.entries) {
-      this.getAccount(entry.accountId);
+      await this.getAccount(entry.accountId);
       if (entry.amountCents <= 0) {
         throw new AppError('VALIDATION_ERROR', 'Entry amounts must be positive integers');
       }
@@ -89,7 +89,7 @@ export class AccountService {
     );
   }
 
-  verifyLedgerIntegrity(): LedgerIntegrityResult {
+  async verifyLedgerIntegrity(): Promise<LedgerIntegrityResult> {
     return this.ledger.getIntegrityCheck();
   }
 }

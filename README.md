@@ -2,11 +2,20 @@
 
 A production-quality Accounts Payable module for a Transportation Management System (TMS), featuring double-entry ledger accounting, invoice lifecycle management, idempotent payments, and refund/void flows with full audit trails.
 
+## Production
+
+- **Frontend (Vercel):** https://mini-payment-ledger-invoice-service-six.vercel.app/
+- **Backend API (Render):** https://mini-payment-ledger-invoice-service-1.onrender.com
+- **GraphQL endpoint:** https://mini-payment-ledger-invoice-service-1.onrender.com/graphql
+- **Database:** Supabase PostgreSQL, configured through the backend `DATABASE_URL`
+
+Production data is stored in Supabase PostgreSQL, so vendors, invoices, ledger entries, payments, and reversals persist across backend redeploys. SQLite is only used for local development when `DATABASE_URL` is not set.
+
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 22+ (uses built-in `node:sqlite` — no native compilation required)
+- Node.js 22+
 - npm
 
 ### 1. Backend
@@ -19,7 +28,9 @@ npm run db:seed
 npm run dev
 ```
 
-GraphQL playground: http://localhost:4001/graphql
+Local GraphQL playground: http://localhost:8266/graphql
+
+For production-like local development, add `DATABASE_URL` to `server/.env` so the backend connects to Supabase PostgreSQL. Without `DATABASE_URL`, it falls back to local SQLite.
 
 ### 2. Frontend
 
@@ -31,12 +42,18 @@ npm run dev
 
 App: http://localhost:5173 (proxies `/graphql` to the backend)
 
+For deployed frontend builds, set:
+
+```env
+VITE_GRAPHQL_URL=https://mini-payment-ledger-invoice-service-1.onrender.com/graphql
+```
+
 ## Architecture
 
 ```
-/server                    Backend (Node.js + Apollo GraphQL + SQLite)
+/server                    Backend (Node.js + Express + Apollo GraphQL)
   src/
-    db/                    Database connection, migrations, seed
+    db/                    Database connection, migrations, seed (PostgreSQL/SQLite)
     repositories/          Data access layer (SQL queries)
     services/              Business logic (ledger, invoices, payments)
     graphql/               Schema and thin resolvers
@@ -78,7 +95,7 @@ draft → sent → partially_paid → paid
 ### Concurrency & Idempotency
 
 - Payment `idempotency_key` is unique in the database; duplicate requests return the existing payment (no-op)
-- `applyPayment` runs inside `BEGIN IMMEDIATE` transaction with re-check inside the lock
+- `applyPayment` runs inside a database transaction with a re-check inside the lock
 - Reversals also use idempotency keys
 
 ### Overdue Job
@@ -94,7 +111,7 @@ Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `4001` | GraphQL server port |
+| `PORT` | `8266` | Backend server port |
 | `DATABASE_PATH` | `./data/ledger.db` | SQLite file (local dev only — **data is lost on redeploy**) |
 | `DATABASE_URL` | — | **PostgreSQL connection string (Supabase) — use in production for persistent data** |
 | `VITE_GRAPHQL_URL` | `/graphql` | Frontend GraphQL endpoint |
@@ -104,13 +121,16 @@ Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue 
 SQLite stores data in a local file. On Render, Railway, Vercel, and similar hosts, that file is **wiped on every redeploy**. To keep your invoices, vendors, and payments:
 
 1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **Project Settings → Database → Connection string**
-3. Copy the **URI** (use **Transaction pooler** on serverless hosts like Render)
-4. Add to your deployed backend environment:
+2. In Supabase, click **Connect**
+3. Choose **ORM** or **Connection string**
+4. Copy the `DATABASE_URL` URI (use the transaction pooler on Render)
+5. Add to your deployed backend environment:
    ```
-   DATABASE_URL=postgresql://postgres.[ref]:[password]@...pooler.supabase.com:6543/postgres
+   DATABASE_URL=postgresql://postgres.[ref]:[password]@...pooler.supabase.com:6543/postgres?pgbouncer=true
    ```
-5. Redeploy — tables are created automatically on startup, and data persists across deploys
+6. Redeploy the backend. Tables are created automatically on startup, and data persists across deploys.
+
+On Render, set `DATABASE_URL` in the backend service environment variables. On Vercel, set `VITE_GRAPHQL_URL` in the frontend project environment variables.
 
 For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as before.
 
@@ -125,10 +145,17 @@ For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as b
 ## Intentionally Left Out
 
 - Authentication, multi-tenancy, and RBAC
-- Backend unit/integration tests (per spec)
 - Email delivery of invoices (vendor email is stored on send; no outbound mail yet)
-- Multi-currency support
 - Partial refunds (reversals reverse the full remaining net amount of a payment)
+
+## Testing
+
+```bash
+cd server
+npm test
+```
+
+The backend test suite covers ledger integrity, invoice lifecycle, payments, refunds, concurrency, idempotency, and currency conversion.
 
 ## Known Limitations
 
@@ -139,7 +166,6 @@ For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as b
 
 ## Seeded Data
 
-test
 After `npm run db:seed`:
 
 | Item | Details |

@@ -1,15 +1,12 @@
-import { Box, Button, Stack, Typography } from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import { useNavigate } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { Box, Stack, Typography } from '@mui/material';
 import { tokens } from '../../theme/tokens';
 
 interface PageHeaderProps {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   actions?: React.ReactNode;
   breadcrumbs?: React.ReactNode;
-  backTo?: string;
-  backLabel?: string;
 }
 
 export function PageHeader({
@@ -17,11 +14,7 @@ export function PageHeader({
   subtitle,
   actions,
   breadcrumbs,
-  backTo,
-  backLabel = 'Back',
 }: PageHeaderProps) {
-  const navigate = useNavigate();
-
   return (
     <Box
       sx={{
@@ -44,29 +37,13 @@ export function PageHeader({
         },
       }}
     >
-      {backTo ? (
-        <Button
-          size="small"
-          startIcon={<ArrowBackIcon fontSize="small" />}
-          onClick={() => navigate(backTo)}
-          sx={{
-            mb: breadcrumbs ? 0.5 : 1,
-            ml: -0.5,
-            color: tokens.color.inkSecondary,
-            alignSelf: 'flex-start',
-            '&:hover': { color: tokens.color.primary, bgcolor: 'transparent' },
-          }}
-        >
-          {backLabel}
-        </Button>
-      ) : null}
       {breadcrumbs}
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         justifyContent="space-between"
         alignItems={{ xs: 'flex-start', sm: 'center' }}
         spacing={2}
-        sx={{ mt: breadcrumbs || backTo ? 1 : 0 }}
+        sx={{ mt: breadcrumbs ? 1 : 0 }}
       >
         <Box sx={{ minWidth: 0 }}>
           <Typography
@@ -81,9 +58,7 @@ export function PageHeader({
             {title}
           </Typography>
           {subtitle ? (
-            <Typography variant="body2" sx={{ maxWidth: 560, lineHeight: 1.6, wordBreak: 'break-word' }}>
-              {subtitle}
-            </Typography>
+            <Box sx={{ mt: 0.75, maxWidth: 560, wordBreak: 'break-word' }}>{subtitle}</Box>
           ) : null}
         </Box>
         {actions ? (

@@ -2,13 +2,22 @@ import { Box, Chip, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGetAccountStatementQuery, useGetAccountsQuery } from '../api';
-import { Breadcrumbs, Table, type TableColumn } from '../components/common';
+import { Table, Breadcrumbs, type TableColumn } from '../components/common';
 import { MoneyAmount } from '../components/ui/MoneyAmount';
 import { PageHeader } from '../components/ui/PageHeader';
+import {
+  ACCOUNT_TYPE_DESCRIPTIONS,
+  ACCOUNT_TYPE_OPTIONS,
+  ACCOUNT_TYPES,
+} from '../constants';
 import { ROUTE_PATHS } from '../routes/routePaths';
-import { tokens } from '../theme/tokens';
-import type { AccountStatementLine } from '../types';
+import { accountTypeTokens, tokens } from '../theme/tokens';
+import type { AccountStatementLine, AccountType } from '../types';
 import { formatDateTime } from '../utils/format';
+
+function getAccountTypeLabel(type: AccountType): string {
+  return ACCOUNT_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type;
+}
 
 export function AccountStatementPage() {
   const { accountId } = useParams<{ accountId: string }>();
@@ -23,10 +32,21 @@ export function AccountStatementPage() {
   const breadcrumbItems = useMemo(
     () => [
       { label: 'Accounts', path: ROUTE_PATHS.ACCOUNTS },
-      { label: account?.name ?? accountId ?? '' },
+      { label: account?.name ?? 'Statement' },
     ],
-    [account?.name, accountId]
+    [account?.name]
   );
+
+  const accountDescription = useMemo(() => {
+    if (!account) return undefined;
+    if (account.accountType === ACCOUNT_TYPES.COMPANY_BANK) {
+      return ACCOUNT_TYPE_DESCRIPTIONS.COMPANY_BANK;
+    }
+    if (account.accountType === ACCOUNT_TYPES.VENDOR_PAYABLE) {
+      return ACCOUNT_TYPE_DESCRIPTIONS.VENDOR_PAYABLE;
+    }
+    return undefined;
+  }, [account]);
 
   const columns = useMemo<TableColumn<AccountStatementLine>[]>(
     () => [
@@ -85,36 +105,76 @@ export function AccountStatementPage() {
     []
   );
 
+  const accountTypeToken = account
+    ? (accountTypeTokens[account.accountType] ?? {
+        color: tokens.color.inkSecondary,
+        background: tokens.color.surfaceMuted,
+      })
+    : null;
+
   return (
     <Box>
       <PageHeader
-        title="Account Statement"
-        backTo={ROUTE_PATHS.ACCOUNTS}
-        backLabel="Back to Accounts"
-        breadcrumbs={<Breadcrumbs items={breadcrumbItems} />}
-        subtitle={account ? `${account.name} · ${account.accountType}` : undefined}
+        title={account?.name ?? 'Account Statement'}
+        breadcrumbs={
+          <Breadcrumbs items={breadcrumbItems} backTo={ROUTE_PATHS.ACCOUNTS} />
+        }
+        subtitle={
+          account && accountTypeToken ? (
+            <Stack spacing={0.75}>
+              <Chip
+                label={getAccountTypeLabel(account.accountType)}
+                size="small"
+                sx={{
+                  alignSelf: 'flex-start',
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.02em',
+                  color: accountTypeToken.color,
+                  bgcolor: accountTypeToken.background,
+                  border: 'none',
+                }}
+              />
+              {accountDescription ? (
+                <Typography variant="caption" sx={{ color: tokens.color.inkMuted, lineHeight: 1.5 }}>
+                  {accountDescription}
+                </Typography>
+              ) : null}
+            </Stack>
+          ) : undefined
+        }
+        actions={
+          account ? (
+            <Box
+              sx={{
+                px: 2,
+                py: 1.5,
+                bgcolor: tokens.color.surfaceMuted,
+                border: `1px solid ${tokens.color.borderSubtle}`,
+                textAlign: { xs: 'left', sm: 'right' },
+                minWidth: { sm: 180 },
+              }}
+            >
+              <Typography
+                variant="overline"
+                sx={{ display: 'block', color: tokens.color.inkMuted, lineHeight: 1.3 }}
+              >
+                Current Balance
+              </Typography>
+              <MoneyAmount
+                cents={account.balanceCents}
+                variant="h5"
+                component="div"
+                sx={{
+                  fontWeight: 700,
+                  letterSpacing: '-0.02em',
+                  color: tokens.color.ink,
+                }}
+              />
+            </Box>
+          ) : undefined
+        }
       />
-
-      {account ? (
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{
-            mb: 3,
-            p: 2.5,
-            borderRadius: 0,
-            bgcolor: 'background.paper',
-            border: `1px solid ${tokens.color.borderSubtle}`,
-          }}
-        >
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="overline" display="block">
-              Current Balance
-            </Typography>
-            <MoneyAmount cents={account.balanceCents} variant="h5" component="div" />
-          </Box>
-        </Stack>
-      ) : null}
 
       <Table
         columns={columns}

@@ -96,9 +96,9 @@ export function InvoiceDetailPage() {
     <Box sx={{ pb: { xs: 1, md: 0 } }}>
       <PageHeader
         title={invoice.invoiceNumber}
-        backTo={ROUTE_PATHS.INVOICES}
-        backLabel="Back to Invoices"
-        breadcrumbs={<Breadcrumbs items={breadcrumbItems} />}
+        breadcrumbs={
+          <Breadcrumbs items={breadcrumbItems} backTo={ROUTE_PATHS.INVOICES} />
+        }
         subtitle={`Vendor: ${invoice.vendor.name}`}
         actions={
           <>

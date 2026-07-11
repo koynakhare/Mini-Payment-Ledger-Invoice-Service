@@ -1,5 +1,19 @@
 export const GRAPHQL_BASE_URL = import.meta.env.VITE_GRAPHQL_URL ?? '/graphql';
 
+/** Backend origin for non-GraphQL routes (e.g. PDF). Empty string = same origin (Vite proxy in dev). */
+export function getApiBaseUrl(): string {
+  const graphqlUrl = GRAPHQL_BASE_URL;
+  if (graphqlUrl.startsWith('http')) {
+    return graphqlUrl.replace(/\/graphql\/?$/, '');
+  }
+  return '';
+}
+
+export function getInvoicePdfUrl(invoiceId: string): string {
+  const base = getApiBaseUrl();
+  return base ? `${base}/invoices/${invoiceId}/pdf` : `/invoices/${invoiceId}/pdf`;
+}
+
 export const GRAPHQL_OPERATIONS = {
   QUERIES: {
     GET_ACCOUNTS: 'GetAccounts',

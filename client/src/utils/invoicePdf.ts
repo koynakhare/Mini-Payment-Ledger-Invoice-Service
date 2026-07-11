@@ -1,5 +1,7 @@
+import { getInvoicePdfUrl } from '../constants/apiEndpoints';
+
 export async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string): Promise<void> {
-  const response = await fetch(`/invoices/${invoiceId}/pdf`);
+  const response = await fetch(getInvoicePdfUrl(invoiceId));
 
   if (!response.ok) {
     let message = 'Failed to download invoice PDF';
@@ -10,6 +12,11 @@ export async function downloadInvoicePdf(invoiceId: string, invoiceNumber: strin
       // ignore non-JSON error bodies
     }
     throw new Error(message);
+  }
+
+  const contentType = response.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('application/pdf')) {
+    throw new Error('Server did not return a PDF. Check that VITE_GRAPHQL_URL points to the Render backend.');
   }
 
   const blob = await response.blob();

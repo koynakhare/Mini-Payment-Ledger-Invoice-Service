@@ -25,16 +25,12 @@ async function startServer(): Promise<void> {
   await systemAccountService.ensureExpenseAccount();
 
   const app = express();
+  app.use(cors<cors.CorsRequest>());
   const server = new ApolloServer({ typeDefs, resolvers });
 
   await server.start();
 
-  app.use(
-    '/graphql',
-    cors<cors.CorsRequest>(),
-    express.json(),
-    expressMiddleware(server)
-  );
+  app.use('/graphql', express.json(), expressMiddleware(server));
 
   app.get('/health', (_req, res) => {
     res.json({

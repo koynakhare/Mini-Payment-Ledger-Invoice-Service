@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Box, Button, Chip, Grid, Link } from '@mui/material';
+import { Box, Button, Chip, Grid, Link, Typography } from '@mui/material';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import AddIcon from '@mui/icons-material/Add';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
@@ -12,7 +12,7 @@ import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatCard } from '../../components/ui/StatCard';
 import { ROUTE_PATHS } from '../../routes/routePaths';
-import { ACCOUNT_TYPES } from '../../constants';
+import { ACCOUNT_TYPE_DESCRIPTIONS, ACCOUNT_TYPES } from '../../constants';
 import { accountTypeTokens, tokens } from '../../theme/tokens';
 import type { Account } from '../../types';
 import { CreateAccountDialog } from './CreateAccountDialog';
@@ -40,11 +40,25 @@ export function AccountsPage() {
       {
         id: 'name',
         label: 'Account',
-        renderCell: (row) => (
-          <Box>
-            <Box sx={{ fontWeight: 600, color: tokens.color.ink }}>{row.name}</Box>
-          </Box>
-        ),
+        renderCell: (row) => {
+          const description =
+            row.accountType === ACCOUNT_TYPES.COMPANY_BANK
+              ? ACCOUNT_TYPE_DESCRIPTIONS.COMPANY_BANK
+              : row.accountType === ACCOUNT_TYPES.VENDOR_PAYABLE
+                ? ACCOUNT_TYPE_DESCRIPTIONS.VENDOR_PAYABLE
+                : null;
+
+          return (
+            <Box>
+              <Box sx={{ fontWeight: 600, color: tokens.color.ink }}>{row.name}</Box>
+              {description ? (
+                <Typography variant="caption" sx={{ display: 'block', color: tokens.color.inkMuted, mt: 0.25 }}>
+                  {description}
+                </Typography>
+              ) : null}
+            </Box>
+          );
+        },
       },
       {
         id: 'type',
@@ -125,6 +139,7 @@ export function AccountsPage() {
             moneyCents={summary.bankBalance}
             tone="primary"
             icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18 }} />}
+            hint={ACCOUNT_TYPE_DESCRIPTIONS.COMPANY_BANK}
           />
         </Grid>
         <Grid item xs={12} sm={6}>
@@ -133,7 +148,7 @@ export function AccountsPage() {
             moneyCents={summary.payableTotal}
             tone="accent"
             icon={<GroupsOutlinedIcon sx={{ fontSize: 18 }} />}
-            hint={`${summary.vendorCount} vendor account${summary.vendorCount === 1 ? '' : 's'}`}
+            hint={`${ACCOUNT_TYPE_DESCRIPTIONS.VENDOR_PAYABLE} · ${summary.vendorCount} vendor account${summary.vendorCount === 1 ? '' : 's'}`}
           />
         </Grid>
       </Grid>

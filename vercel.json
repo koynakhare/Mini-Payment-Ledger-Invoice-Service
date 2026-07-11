@@ -4,6 +4,10 @@
   "outputDirectory": "client/dist",
   "rewrites": [
     {
+      "source": "/invoices/:id/pdf",
+      "destination": "https://mini-payment-ledger-invoice-service-1.onrender.com/invoices/:id/pdf"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

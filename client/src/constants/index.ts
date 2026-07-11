@@ -28,6 +28,11 @@ export const ACCOUNT_TYPE_OPTIONS = [
   { value: ACCOUNT_TYPES.EXPENSE, label: 'Expense' },
 ] as const;
 
+export const ACCOUNT_TYPE_DESCRIPTIONS = {
+  COMPANY_BANK: 'Money your company has paid out to vendors (cash leaving your bank)',
+  VENDOR_PAYABLE: 'Money your company still owes that vendor',
+} as const;
+
 export const STATUS_FILTER_OPTIONS: Array<{
   label: string;
   value: InvoiceStatus | typeof INVOICE_STATUS_FILTER_ALL;

@@ -12,7 +12,12 @@ import { useGetAccountsQuery, useGetInvoicesQuery } from '../api';
 import { Loader } from './common';
 import { StatCard } from './ui/StatCard';
 import { ROUTE_PATHS } from '../routes/routePaths';
-import { ACCOUNT_TYPES, INVOICE_STATUS, PAYABLE_INVOICE_STATUSES } from '../constants';
+import {
+  ACCOUNT_TYPE_DESCRIPTIONS,
+  ACCOUNT_TYPES,
+  INVOICE_STATUS,
+  PAYABLE_INVOICE_STATUSES,
+} from '../constants';
 import { tokens } from '../theme/tokens';
 
 export function DashboardOverview() {
@@ -55,7 +60,7 @@ export function DashboardOverview() {
           moneyCents={stats.bankBalance}
           tone="primary"
           icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18 }} />}
-          hint="Available cash position"
+          hint={ACCOUNT_TYPE_DESCRIPTIONS.COMPANY_BANK}
         />
       </Grid>
       <Grid item xs={12} sm={6} lg={3}>
@@ -64,7 +69,7 @@ export function DashboardOverview() {
           moneyCents={stats.payableTotal}
           tone="accent"
           icon={<GroupsOutlinedIcon sx={{ fontSize: 18 }} />}
-          hint={`${stats.vendorCount} vendor account${stats.vendorCount === 1 ? '' : 's'}`}
+          hint={`${ACCOUNT_TYPE_DESCRIPTIONS.VENDOR_PAYABLE} · ${stats.vendorCount} vendor account${stats.vendorCount === 1 ? '' : 's'}`}
         />
       </Grid>
       <Grid item xs={12} sm={6} lg={3}>

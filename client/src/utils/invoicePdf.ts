@@ -16,7 +16,7 @@ export async function downloadInvoicePdf(invoiceId: string, invoiceNumber: strin
 
   const contentType = response.headers.get('Content-Type') ?? '';
   if (!contentType.includes('application/pdf')) {
-    throw new Error('Server did not return a PDF. Check that VITE_GRAPHQL_URL points to the Render backend.');
+    throw new Error('Server did not return a PDF.');
   }
 
   const blob = await response.blob();

@@ -351,8 +351,8 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
       setExtractionDraft(null);
       setExtraLineItemsNote('');
       onClose();
-    } catch {
-      showToast('Failed to create invoice.', 'error');
+    } catch (err) {
+      showToast(getErrorMessage(err) || 'Failed to create invoice.', 'error');
     }
   };
 

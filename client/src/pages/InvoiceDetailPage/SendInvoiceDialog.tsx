@@ -68,7 +68,7 @@ export function SendInvoiceDialog({ open, invoice, onClose }: SendInvoiceDialogP
 
     try {
       await sendInvoice({ invoiceId: invoice.id, vendorEmail }).unwrap();
-      showToast(`Invoice sent to ${vendorEmail} and posted to the ledger.`, 'success');
+      showToast(`Invoice emailed to ${vendorEmail} with PDF and posted to the ledger.`, 'success');
       handleClose();
     } catch (err) {
       const message = getErrorMessage(err);

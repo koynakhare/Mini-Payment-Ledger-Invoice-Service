@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { after, beforeEach, describe, it } from 'node:test';
 import {
+  resetEmailClient,
+  setEmailClient,
+  type EmailClient,
+  type SendEmailOptions,
+} from '../email/index.js';
+import { invoiceService } from '../services/index.js';
+import {
   createVendorWithInvoice,
   gqlExpectError,
   mutateApplyPayment,
@@ -18,9 +25,11 @@ describe('invoice', () => {
   beforeEach(async () => {
     await resetDatabase();
     await ensureApproverAuth();
+    resetEmailClient();
   });
 
   after(async () => {
+    resetEmailClient();
     await teardownTestServer();
   });
 
@@ -60,6 +69,46 @@ describe('invoice', () => {
     assert.equal(sent.sendInvoice.status, 'sent');
   });
 
+  it('emails the vendor a PDF when sending an invoice', async () => {
+    const sentMail: SendEmailOptions[] = [];
+    const mock: EmailClient = {
+      async send(options) {
+        sentMail.push(options);
+      },
+    };
+    setEmailClient(mock);
+
+    const { invoice } = await createVendorWithInvoice({ invoiceNumber: 'INV-SEND-PDF' });
+    await mutateSendInvoice(invoice.id, 'billing@vendor.example');
+
+    assert.equal(sentMail.length, 1);
+    assert.equal(sentMail[0].to, 'billing@vendor.example');
+    assert.match(sentMail[0].subject, /INV-SEND-PDF/);
+    assert.equal(sentMail[0].attachments?.length, 1);
+    assert.equal(sentMail[0].attachments?.[0].contentType, 'application/pdf');
+    assert.ok((sentMail[0].attachments?.[0].content.length ?? 0) > 100);
+  });
+
+  it('keeps the invoice as draft when email delivery fails', async () => {
+    setEmailClient({
+      async send() {
+        throw new Error('SMTP down');
+      },
+    });
+
+    const { invoice } = await createVendorWithInvoice({ invoiceNumber: 'INV-SEND-FAIL' });
+    const message = await gqlExpectError(
+      `mutation ($invoiceId: ID!, $vendorEmail: String!) {
+        sendInvoice(invoiceId: $invoiceId, vendorEmail: $vendorEmail) { id status }
+      }`,
+      { invoiceId: invoice.id, vendorEmail: 'billing@vendor.example' }
+    );
+    assert.match(message, /SMTP down|Failed to send|unexpected/i);
+
+    const reloaded = await invoiceService.getInvoice(invoice.id);
+    assert.equal(reloaded.status, 'draft');
+  });
+
   it('rejects invoices with zero line items', async () => {
     const vendor = await mutateCreateVendor('Empty Lines Carrier');
     const message = await gqlExpectError(
@@ -76,6 +125,31 @@ describe('invoice', () => {
       }
     );
     assert.match(message, /at least one line item/i);
+  });
+
+  it('rejects a duplicate invoice number with a clear conflict message', async () => {
+    const vendor = await mutateCreateVendor('Duplicate Number Carrier');
+    await mutateCreateInvoice({
+      vendorId: vendor.createVendor.id,
+      invoiceNumber: 'INV-DUP-01',
+      dueDate: '2026-10-01',
+      lineItems: [{ description: 'Haul', quantity: 1, unitPriceCents: 1000 }],
+    });
+
+    const message = await gqlExpectError(
+      `mutation ($input: CreateInvoiceInput!) {
+        createInvoice(input: $input) { id }
+      }`,
+      {
+        input: {
+          vendorId: vendor.createVendor.id,
+          invoiceNumber: 'INV-DUP-01',
+          dueDate: '2026-10-02',
+          lineItems: [{ description: 'Haul 2', quantity: 1, unitPriceCents: 2000 }],
+        },
+      }
+    );
+    assert.match(message, /already exists/i);
   });
 
   it('flags past-due unpaid invoices as overdue via markOverdueInvoices', async () => {

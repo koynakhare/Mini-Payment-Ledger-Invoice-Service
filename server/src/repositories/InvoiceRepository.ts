@@ -77,6 +77,14 @@ export class InvoiceRepository {
     return row ? mapInvoice(row) : null;
   }
 
+  async findByInvoiceNumber(invoiceNumber: string): Promise<Invoice | null> {
+    const row = await queryOne<InvoiceRow>(
+      'SELECT * FROM invoices WHERE lower(invoice_number) = lower($1)',
+      [invoiceNumber]
+    );
+    return row ? mapInvoice(row) : null;
+  }
+
   async findByIdForUpdate(id: string): Promise<Invoice | null> {
     const sql = isPostgres()
       ? 'SELECT * FROM invoices WHERE id = $1 FOR UPDATE'

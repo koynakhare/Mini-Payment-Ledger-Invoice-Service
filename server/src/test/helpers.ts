@@ -29,6 +29,11 @@ export async function resetDatabase(): Promise<void> {
   delete process.env.DATABASE_URL;
   process.env.DATABASE_PATH = ':memory:';
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-do-not-use-in-production';
+  // Avoid accidental real SMTP sends during tests when a developer shell exports SMTP_* .
+  delete process.env.SMTP_HOST;
+  delete process.env.SMTP_USER;
+  delete process.env.SMTP_PASS;
+  delete process.env.SMTP_FROM;
   await runMigrations();
   await systemAccountService.ensureCompanyBankAccount();
   await systemAccountService.ensureExpenseAccount();

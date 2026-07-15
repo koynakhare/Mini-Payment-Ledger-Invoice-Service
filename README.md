@@ -219,9 +219,24 @@ For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as b
 ## Intentionally Left Out
 
 - Multi-tenancy (single shared ledger/tenant)
-- Email delivery of invoices (vendor email is stored on send; no outbound mail yet)
 - Partial refunds (reversals reverse the full remaining net amount of a payment)
 
+## Invoice email (Send Invoice)
+
+`sendInvoice` emails the vendor a PDF attachment, then posts the draft invoice to the ledger.
+
+1. Add SMTP settings to `server/.env` (see `.env.example`):
+   ```
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=your-app-password
+   SMTP_FROM="TMS Payables <you@gmail.com>"
+   ```
+2. Restart the server.
+3. Open an invoice → **Send Invoice** → enter the vendor email.
+
+Without SMTP configured, the server logs the outbound message to the console and still completes the send (handy for local demos). If SMTP is configured and delivery fails, the invoice stays `draft` and is not posted.
 ## Testing
 
 ```bash

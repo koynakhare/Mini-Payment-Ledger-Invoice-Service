@@ -23,6 +23,7 @@
     "graphql-tag": "^2.12.6",
     "jsonwebtoken": "^9.0.3",
     "lodash": "^4.17.21",
+    "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "pg": "^8.22.0"
   },
@@ -33,6 +34,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/lodash": "^4.17.15",
     "@types/node": "^22.13.4",
+    "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
     "tsx": "^4.19.2",

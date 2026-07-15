@@ -1,11 +1,13 @@
 import isEmpty from 'lodash/isEmpty.js';
 import trim from 'lodash/trim.js';
 import { AppError } from '../errors/AppError.js';
+import { EmailClientError, sendEmail } from '../email/emailClient.js';
+import { generateInvoicePdf, invoicePdfFilename } from '../pdf/invoicePdf.js';
 import { InvoiceRepository } from '../repositories/InvoiceRepository.js';
 import { LedgerRepository } from '../repositories/LedgerRepository.js';
 import { PaymentRepository } from '../repositories/PaymentRepository.js';
 import { SystemAccountService, VendorService } from './VendorService.js';
-import { CURRENCY_CONFIG } from '../config/currencyConfig.js';
+import { CURRENCY_CONFIG, type CurrencyCode } from '../config/currencyConfig.js';
 import { assertSupportedCurrency } from '../utils/convertCurrency.js';
 import type {
   CreateInvoiceInput,
@@ -13,6 +15,22 @@ import type {
   InvoiceLineItem,
   InvoiceStatus,
 } from '../types/index.js';
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code) : '';
+  if (code === '23505') return true; // Postgres unique_violation
+  const message = error instanceof Error ? error.message : String(error);
+  return /unique|UNIQUE/i.test(message);
+}
+
+function formatMoney(cents: number, currency: CurrencyCode): string {
+  const symbol = currency === 'INR' ? '₹' : '$';
+  return `${symbol}${(cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
 export class InvoiceService {
   private readonly invoices = new InvoiceRepository();
@@ -68,13 +86,32 @@ export class InvoiceService {
       }
     }
 
-    return this.invoices.create(
-      vendor.id,
-      trim(input.invoiceNumber),
-      input.dueDate,
-      input.lineItems,
-      assertSupportedCurrency(input.currency ?? CURRENCY_CONFIG.DEFAULT_CURRENCY)
-    );
+    const invoiceNumber = trim(input.invoiceNumber);
+    const existing = await this.invoices.findByInvoiceNumber(invoiceNumber);
+    if (existing) {
+      throw new AppError(
+        'CONFLICT',
+        `Invoice number "${invoiceNumber}" already exists. Use a different number.`
+      );
+    }
+
+    try {
+      return await this.invoices.create(
+        vendor.id,
+        invoiceNumber,
+        input.dueDate,
+        input.lineItems,
+        assertSupportedCurrency(input.currency ?? CURRENCY_CONFIG.DEFAULT_CURRENCY)
+      );
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw new AppError(
+          'CONFLICT',
+          `Invoice number "${invoiceNumber}" already exists. Use a different number.`
+        );
+      }
+      throw error;
+    }
   }
 
   async sendInvoice(invoiceId: string, vendorEmail: string): Promise<Invoice> {
@@ -88,6 +125,61 @@ export class InvoiceService {
     const totalCents = await this.invoices.getTotalCents(invoiceId);
     if (totalCents <= 0) {
       throw new AppError('VALIDATION_ERROR', 'Invoice total must be greater than zero to send');
+    }
+
+    const vendor = await this.vendors.getVendor(invoice.vendorId);
+    const lineItems = await this.invoices.findLineItems(invoiceId);
+    const paidCents = await this.payments.getNetPaidCents(invoiceId);
+    const remainingCents = totalCents - paidCents;
+    const pdfBuffer = await generateInvoicePdf({
+      invoice,
+      vendorName: vendor.name,
+      vendorContact: vendorEmail,
+      lineItems,
+      totalCents,
+      paidCents,
+      remainingCents,
+    });
+    const pdfName = invoicePdfFilename(invoice.invoiceNumber);
+    const totalDisplay = formatMoney(totalCents, invoice.currency);
+    const dueDisplay = invoice.dueDate;
+
+    try {
+      await sendEmail({
+        to: vendorEmail,
+        subject: `Invoice ${invoice.invoiceNumber} from TMS Accounts Payable`,
+        text: [
+          `Hello ${vendor.name},`,
+          '',
+          `Please find invoice ${invoice.invoiceNumber} attached as a PDF.`,
+          `Amount due: ${totalDisplay}`,
+          `Due date: ${dueDisplay}`,
+          '',
+          'Thank you,',
+          'TMS Accounts Payable',
+        ].join('\n'),
+        html: [
+          `<p>Hello ${vendor.name},</p>`,
+          `<p>Please find invoice <strong>${invoice.invoiceNumber}</strong> attached as a PDF.</p>`,
+          `<p>Amount due: <strong>${totalDisplay}</strong><br/>Due date: <strong>${dueDisplay}</strong></p>`,
+          `<p>Thank you,<br/>TMS Accounts Payable</p>`,
+        ].join(''),
+        attachments: [
+          {
+            filename: pdfName,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
+      });
+    } catch (error) {
+      if (error instanceof EmailClientError) {
+        throw new AppError('INTERNAL_ERROR', error.message, { emailCode: error.code });
+      }
+      throw new AppError(
+        'INTERNAL_ERROR',
+        error instanceof Error ? error.message : 'Failed to send invoice email.'
+      );
     }
 
     const vendorPayable = await this.vendors.getVendorPayableAccount(invoice.vendorId);

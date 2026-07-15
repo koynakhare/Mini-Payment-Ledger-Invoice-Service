@@ -8,13 +8,17 @@ import {
   mutateApplyPayment,
   queryInvoice,
   queryLedgerIntegrity,
+  ensureApproverAuth,
   resetDatabase,
   sendInvoice,
   teardownTestServer,
 } from './helpers.js';
 
 describe('currency', () => {
-  beforeEach(async () => { await resetDatabase(); });
+  beforeEach(async () => {
+    await resetDatabase();
+    await ensureApproverAuth();
+  });
 
   after(async () => {
     await teardownTestServer();

@@ -8,6 +8,7 @@ import {
   mutateCreateVendor,
   mutateMarkOverdue,
   mutateSendInvoice,
+  ensureApproverAuth,
   resetDatabase,
   sendInvoice,
   teardownTestServer,
@@ -16,6 +17,7 @@ import {
 describe('invoice', () => {
   beforeEach(async () => {
     await resetDatabase();
+    await ensureApproverAuth();
   });
 
   after(async () => {

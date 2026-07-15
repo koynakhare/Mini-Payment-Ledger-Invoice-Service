@@ -14,8 +14,13 @@ export const GRAPHQL_OPERATIONS = {
     GET_VENDORS: 'GetVendors',
     GET_INVOICES: 'GetInvoices',
     GET_INVOICE: 'GetInvoice',
+    ME: 'Me',
+    PAYMENT_COMPLIANCE_REVIEW: 'PaymentComplianceReview',
+    ASK_LEDGER_ASSISTANT: 'AskLedgerAssistant',
+    EXTRACT_INVOICE_FROM_DOCUMENT: 'ExtractInvoiceFromDocument',
   },
   MUTATIONS: {
+    LOGIN: 'Login',
     CREATE_VENDOR: 'CreateVendor',
     CREATE_ACCOUNT: 'CreateAccount',
     CREATE_INVOICE: 'CreateInvoice',

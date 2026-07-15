@@ -88,4 +88,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_vendor_unique ON accounts(vendor_
 CREATE INDEX IF NOT EXISTS idx_accounts_vendor ON accounts(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_type ON accounts(account_type);
 CREATE INDEX IF NOT EXISTS idx_invoices_vendor ON invoices(vendor_id);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('VIEWER', 'APPROVER')),
+  created_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+  updated_at TEXT NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC')
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `;

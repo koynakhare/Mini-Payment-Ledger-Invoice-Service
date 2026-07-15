@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { closeDb } from './connection.js';
 import { runMigrations } from './migrations.js';
 

@@ -7,6 +7,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import filter from 'lodash/filter.js';
 import sumBy from 'lodash/sumBy.js';
 import { useGetAccountsQuery } from '../../api';
+import { useAuth } from '../../auth';
 import { Table, type TableColumn } from '../../components/common';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -24,6 +25,7 @@ function formatAccountType(type: string): string {
 export function AccountsPage() {
   const { data: accounts, isLoading, isError, error } = useGetAccountsQuery();
   const [createOpen, setCreateOpen] = useState(false);
+  const { isApprover } = useAuth();
 
   const summary = useMemo(() => {
     const bank = accounts?.find((a) => a.accountType === ACCOUNT_TYPES.COMPANY_BANK);
@@ -126,9 +128,11 @@ export function AccountsPage() {
         title="Accounts"
         subtitle="Company bank, per-vendor payables, and expense — balances derived live from the ledger"
         actions={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
-            Add Account
-          </Button>
+          isApprover ? (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
+              Add Account
+            </Button>
+          ) : undefined
         }
       />
 

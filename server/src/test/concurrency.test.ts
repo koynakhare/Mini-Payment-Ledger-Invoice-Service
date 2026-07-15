@@ -8,6 +8,7 @@ import {
   createVendorWithInvoice,
   gql,
   queryInvoice,
+  ensureApproverAuth,
   resetDatabase,
   sendInvoice,
   teardownTestServer,
@@ -26,7 +27,10 @@ async function attemptPayment(invoiceId: string, amountCents: number, idempotenc
 }
 
 describe('concurrency', () => {
-  beforeEach(async () => { await resetDatabase(); });
+  beforeEach(async () => {
+    await resetDatabase();
+    await ensureApproverAuth();
+  });
 
   after(async () => {
     await teardownTestServer();
@@ -63,6 +67,7 @@ describe('concurrency', () => {
   it('never records paid amount above invoice total after repeated concurrent races', async () => {
     for (let i = 0; i < 8; i += 1) {
       await resetDatabase();
+      await ensureApproverAuth();
       const { invoice } = await createVendorWithInvoice({
         invoiceNumber: `INV-RACE-LOOP-${i}`,
         totalCents: 50_000,

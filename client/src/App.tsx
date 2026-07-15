@@ -1,6 +1,7 @@
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './auth';
 import { ToastProvider } from './components/ui/ToastProvider';
 import { AppRoutes } from './routes/AppRoutes';
 import { store } from './store/store';
@@ -12,9 +13,11 @@ export function App() {
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <ToastProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </AuthProvider>
         </ToastProvider>
       </ThemeProvider>
     </Provider>

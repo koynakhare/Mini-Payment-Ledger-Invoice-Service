@@ -1,8 +1,13 @@
 import { GraphQLError } from 'graphql';
+import { requireApprover, requireAuth, type GraphQLContext } from '../auth/index.js';
 import { isAppError } from '../errors/AppError.js';
 import {
   accountService,
+  authService,
+  complianceReviewService,
+  invoiceExtractionService,
   invoiceService,
+  ledgerAssistantService,
   paymentService,
   vendorService,
 } from '../services/index.js';
@@ -27,32 +32,60 @@ function formatError(error: unknown): never {
   throw new GraphQLError(message, { extensions: { code: 'INTERNAL_ERROR' } });
 }
 
-function wrap<T extends (...args: never[]) => unknown>(fn: T): T {
-  return (async (...args: Parameters<T>) => {
+function wrap<TArgs extends unknown[], TResult>(
+  fn: (...args: TArgs) => TResult | Promise<TResult>
+): (...args: TArgs) => Promise<TResult> {
+  return async (...args: TArgs) => {
     try {
       return await fn(...args);
     } catch (error) {
       return formatError(error);
     }
-  }) as T;
+  };
+}
+
+type ResolverFn = (
+  parent: unknown,
+  args: Record<string, unknown>,
+  context: GraphQLContext
+) => unknown;
+
+function withAuth(fn: ResolverFn): ResolverFn {
+  return wrap((_parent, args, context) => {
+    requireAuth(context);
+    return fn(_parent, args, context);
+  });
+}
+
+function withApprover(fn: ResolverFn): ResolverFn {
+  return wrap((_parent, args, context) => {
+    requireApprover(context);
+    return fn(_parent, args, context);
+  });
 }
 
 export const resolvers = {
   Query: {
-    accounts: wrap(() => accountService.listAccounts()),
-    account: wrap((_: unknown, { id }: { id: string }) => accountService.getAccount(id)),
-    accountStatement: wrap((_: unknown, { accountId }: { accountId: string }) =>
-      accountService.getStatement(accountId)
+    me: wrap((_parent, _args, context: GraphQLContext) => {
+      const user = requireAuth(context);
+      return authService.me(user.id);
+    }),
+    accounts: withAuth(() => accountService.listAccounts()),
+    account: withAuth((_parent, { id }) => accountService.getAccount(id as string)),
+    accountStatement: withAuth((_parent, { accountId }) =>
+      accountService.getStatement(accountId as string)
     ),
-    ledgerIntegrity: wrap(() => accountService.verifyLedgerIntegrity()),
-    vendors: wrap(() => vendorService.listVendors()),
-    vendor: wrap((_: unknown, { id }: { id: string }) => vendorService.getVendor(id)),
-    invoices: wrap((_: unknown, { status }: { status?: string }) =>
-      invoiceService.listInvoices(status as Parameters<typeof invoiceService.listInvoices>[0])
+    ledgerIntegrity: withAuth(() => accountService.verifyLedgerIntegrity()),
+    vendors: withAuth(() => vendorService.listVendors()),
+    vendor: withAuth((_parent, { id }) => vendorService.getVendor(id as string)),
+    invoices: withAuth((_parent, { status }) =>
+      invoiceService.listInvoices(
+        status as Parameters<typeof invoiceService.listInvoices>[0]
+      )
     ),
-    invoice: wrap((_: unknown, { id }: { id: string }) => invoiceService.getInvoice(id)),
-    transaction: wrap(async (_: unknown, { id }: { id: string }) => {
-      const tx = await ledger.findTransactionById(id);
+    invoice: withAuth((_parent, { id }) => invoiceService.getInvoice(id as string)),
+    transaction: withAuth(async (_parent, { id }) => {
+      const tx = await ledger.findTransactionById(id as string);
       if (!tx) {
         throw new GraphQLError(`Transaction not found: ${id}`, {
           extensions: { code: 'NOT_FOUND' },
@@ -60,51 +93,67 @@ export const resolvers = {
       }
       return tx;
     }),
+    paymentComplianceReview: withAuth((_parent, { invoiceId, pendingPaymentAmountCents }) =>
+      complianceReviewService.reviewPayment(
+        invoiceId as string,
+        pendingPaymentAmountCents as number | null | undefined
+      )
+    ),
+    askLedgerAssistant: withAuth((_parent, { question }) =>
+      ledgerAssistantService.ask(question as string)
+    ),
+    extractInvoiceFromDocument: withAuth(
+      (_parent, { documentText, documentBase64, mimeType }) =>
+        invoiceExtractionService.extractFromDocument({
+          documentText: documentText as string | null | undefined,
+          documentBase64: documentBase64 as string | null | undefined,
+          mimeType: mimeType as string | null | undefined,
+        })
+    ),
   },
 
   Mutation: {
-    createVendor: wrap(
-      (_: unknown, { input }: { input: Parameters<typeof vendorService.createVendor>[0] }) =>
-        vendorService.createVendor(input)
+    login: wrap((_parent, { email, password }) =>
+      authService.login(email as string, password as string)
     ),
-    createAccount: wrap(
-      async (_: unknown, { input }: { input: Parameters<typeof accountService.createAccount>[0] }) => {
-        try {
-          const account = await accountService.createAccount(input);
-          return { account, error: null };
-        } catch (error) {
-          if (
-            isAppError(error) &&
-            (error.code === 'VALIDATION_ERROR' || error.code === 'CONFLICT')
-          ) {
-            return { account: null, error: error.message };
-          }
-          return formatError(error);
+    createVendor: withApprover((_parent, { input }) =>
+      vendorService.createVendor(input as Parameters<typeof vendorService.createVendor>[0])
+    ),
+    createAccount: withApprover(async (_parent, { input }) => {
+      try {
+        const account = await accountService.createAccount(
+          input as Parameters<typeof accountService.createAccount>[0]
+        );
+        return { account, error: null };
+      } catch (error) {
+        if (
+          isAppError(error) &&
+          (error.code === 'VALIDATION_ERROR' || error.code === 'CONFLICT')
+        ) {
+          return { account: null, error: error.message };
         }
+        return formatError(error);
       }
+    }),
+    recordTransaction: withApprover((_parent, { input }) =>
+      accountService.recordTransaction(
+        input as Parameters<typeof accountService.recordTransaction>[0]
+      )
     ),
-    recordTransaction: wrap(
-      (_: unknown, { input }: { input: Parameters<typeof accountService.recordTransaction>[0] }) =>
-        accountService.recordTransaction(input)
+    createInvoice: withApprover((_parent, { input }) =>
+      invoiceService.createInvoice(input as Parameters<typeof invoiceService.createInvoice>[0])
     ),
-    createInvoice: wrap(
-      (_: unknown, { input }: { input: Parameters<typeof invoiceService.createInvoice>[0] }) =>
-        invoiceService.createInvoice(input)
+    sendInvoice: withApprover((_parent, { invoiceId, vendorEmail }) =>
+      invoiceService.sendInvoice(invoiceId as string, vendorEmail as string)
     ),
-    sendInvoice: wrap(
-      (_: unknown, { invoiceId, vendorEmail }: { invoiceId: string; vendorEmail: string }) =>
-        invoiceService.sendInvoice(invoiceId, vendorEmail)
+    applyPayment: withApprover((_parent, { input }) =>
+      paymentService.applyPayment(input as Parameters<typeof paymentService.applyPayment>[0])
     ),
-    applyPayment: wrap(
-      (_: unknown, { input }: { input: Parameters<typeof paymentService.applyPayment>[0] }) =>
-        paymentService.applyPayment(input)
+    reversePayment: withApprover((_parent, { input }) =>
+      paymentService.reversePayment(input as Parameters<typeof paymentService.reversePayment>[0])
     ),
-    reversePayment: wrap(
-      (_: unknown, { input }: { input: Parameters<typeof paymentService.reversePayment>[0] }) =>
-        paymentService.reversePayment(input)
-    ),
-    markOverdueInvoices: wrap((_: unknown, { asOfDate }: { asOfDate?: string }) =>
-      invoiceService.markOverdueInvoices(asOfDate)
+    markOverdueInvoices: withApprover((_parent, { asOfDate }) =>
+      invoiceService.markOverdueInvoices(asOfDate as string | undefined)
     ),
   },
 

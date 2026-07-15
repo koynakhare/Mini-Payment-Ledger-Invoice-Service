@@ -16,10 +16,12 @@ import {
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import ChatOutlinedIcon from '@mui/icons-material/ChatOutlined';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth';
 import { LAYOUT, NAV_ITEMS } from '../constants';
 import { ROUTE_PATHS } from '../routes/routePaths';
 import { tokens } from '../theme/tokens';
@@ -28,12 +30,14 @@ const NAV_ROUTE_MAP = {
   dashboard: ROUTE_PATHS.DASHBOARD,
   accounts: ROUTE_PATHS.ACCOUNTS,
   invoices: ROUTE_PATHS.INVOICES,
+  assistant: ROUTE_PATHS.ASSISTANT,
 } as const;
 
 const NAV_ICONS = {
   dashboard: <DashboardOutlinedIcon fontSize="small" />,
   accounts: <AccountBalanceOutlinedIcon fontSize="small" />,
   invoices: <ReceiptLongOutlinedIcon fontSize="small" />,
+  assistant: <ChatOutlinedIcon fontSize="small" />,
 } as const;
 
 export function Layout() {
@@ -42,6 +46,7 @@ export function Layout() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, isApprover, logout } = useAuth();
 
   const isActive = (path: string) =>
     path === ROUTE_PATHS.DASHBOARD
@@ -141,22 +146,56 @@ export function Layout() {
       </List>
 
       <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        {user ? (
+          <Box sx={{ mb: 1.5, px: 0.5 }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', display: 'block' }}>
+              Signed in as
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#fff', fontWeight: 600, fontSize: '0.8125rem' }}>
+              {user.email}
+            </Typography>
+            <Typography variant="caption" sx={{ color: tokens.color.accent }}>
+              {user.role}
+            </Typography>
+          </Box>
+        ) : null}
+        {isApprover ? (
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={() => handleNavigate(ROUTE_PATHS.INVOICES)}
+            sx={{
+              background: tokens.color.accentGradient,
+              color: '#fff',
+              py: 1.1,
+              fontWeight: 600,
+              mb: 1,
+              '&:hover': {
+                background: tokens.color.accentGradient,
+                filter: 'brightness(1.08)',
+              },
+            }}
+          >
+            New Invoice
+          </Button>
+        ) : null}
         <Button
           fullWidth
-          variant="contained"
-          onClick={() => handleNavigate(ROUTE_PATHS.INVOICES)}
+          variant="outlined"
+          onClick={() => {
+            logout();
+            navigate(ROUTE_PATHS.LOGIN);
+          }}
           sx={{
-            background: tokens.color.accentGradient,
-            color: '#fff',
-            py: 1.1,
-            fontWeight: 600,
+            color: 'rgba(255,255,255,0.85)',
+            borderColor: 'rgba(255,255,255,0.2)',
             '&:hover': {
-              background: tokens.color.accentGradient,
-              filter: 'brightness(1.08)',
+              borderColor: 'rgba(255,255,255,0.4)',
+              bgcolor: 'rgba(255,255,255,0.06)',
             },
           }}
         >
-          New Invoice
+          Sign out
         </Button>
       </Box>
     </>

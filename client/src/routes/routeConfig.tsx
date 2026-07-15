@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { AccountStatementPage } from '../pages/AccountStatementPage';
 import { AccountsPage } from '../pages/AccountsPage';
+import { AssistantPage } from '../pages/AssistantPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { InvoiceDetailPage } from '../pages/InvoiceDetailPage';
 import { InvoiceListPage } from '../pages/InvoiceListPage';
@@ -38,5 +39,10 @@ export const APP_ROUTE_CONFIG: AppRouteConfig[] = [
     key: ROUTE_KEYS.INVOICE_DETAIL,
     path: `${ROUTE_SEGMENTS.INVOICES}/${ROUTE_SEGMENTS.INVOICE_ID}`,
     Component: InvoiceDetailPage,
+  },
+  {
+    key: ROUTE_KEYS.ASSISTANT,
+    path: ROUTE_SEGMENTS.ASSISTANT,
+    Component: AssistantPage,
   },
 ];

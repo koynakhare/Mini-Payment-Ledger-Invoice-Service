@@ -11,7 +11,69 @@ export type InvoiceStatus =
 
 export type ReversalType = 'refund' | 'void';
 
+export type UserRole = 'VIEWER' | 'APPROVER';
+
+export type ComplianceFlagType =
+  | 'DUPLICATE_INVOICE'
+  | 'AMOUNT_ANOMALY'
+  | 'DATE_MISMATCH'
+  | 'VELOCITY_ANOMALY'
+  | 'OTHER';
+
+export type ComplianceSeverity = 'info' | 'low' | 'medium' | 'high';
+
 export type CurrencyCode = 'USD' | 'INR';
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuthPayload {
+  token: string;
+  user: AuthUser;
+}
+
+export interface ComplianceFlag {
+  type: ComplianceFlagType;
+  severity: ComplianceSeverity;
+  rationale: string;
+}
+
+export interface ComplianceReview {
+  available: boolean;
+  summary: string;
+  flags: ComplianceFlag[];
+}
+
+export interface LedgerAssistantAnswer {
+  answered: boolean;
+  operation: string;
+  answer: string;
+}
+
+export interface ExtractedLineItemDraft {
+  description: string | null;
+  quantity: number | null;
+  unitPriceCents: number | null;
+  confidence: string;
+}
+
+export interface InvoiceExtractionDraft {
+  available: boolean;
+  message: string;
+  vendorName: string | null;
+  matchedVendorId: string | null;
+  invoiceNumber: string | null;
+  dueDate: string | null;
+  currency: CurrencyCode | null;
+  lineItems: ExtractedLineItemDraft[];
+  missingFields: string[];
+  aiFilledFields: string[];
+}
 
 export interface Vendor {
   id: string;

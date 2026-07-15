@@ -1,7 +1,9 @@
+import 'dotenv/config';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
 import cors from 'cors';
 import express from 'express';
+import { buildGraphQLContext, resolveAuthUserOrThrow } from './auth/index.js';
 import { closeDb, getDb, isPostgres } from './db/connection.js';
 import { runMigrations } from './db/migrations.js';
 import { seedIfEmpty } from './db/seed.js';
@@ -30,7 +32,13 @@ async function startServer(): Promise<void> {
 
   await server.start();
 
-  app.use('/graphql', express.json(), expressMiddleware(server));
+  app.use(
+    '/graphql',
+    express.json(),
+    expressMiddleware(server, {
+      context: async ({ req }) => buildGraphQLContext({ req }),
+    })
+  );
 
   app.get('/health', (_req, res) => {
     res.json({
@@ -41,6 +49,12 @@ async function startServer(): Promise<void> {
 
   app.get('/invoices/:id/pdf', async (req, res) => {
     try {
+      const user = resolveAuthUserOrThrow(req.headers.authorization);
+      if (!user) {
+        res.status(401).json({ error: 'Authentication required.' });
+        return;
+      }
+
       const invoiceId = req.params.id;
       const buffer = await invoicePdfService.generatePdfBuffer(invoiceId);
       const filename = await invoicePdfService.getDownloadFilename(invoiceId);
@@ -48,6 +62,10 @@ async function startServer(): Promise<void> {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(buffer);
     } catch (error) {
+      if (isAppError(error) && error.code === 'UNAUTHENTICATED') {
+        res.status(401).json({ error: error.message });
+        return;
+      }
       if (isAppError(error) && error.code === 'NOT_FOUND') {
         res.status(404).json({ error: error.message });
         return;

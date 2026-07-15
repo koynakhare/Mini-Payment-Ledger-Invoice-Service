@@ -49,6 +49,7 @@ export const NAV_ITEMS = [
   { label: 'Dashboard', key: 'dashboard' as const },
   { label: 'Accounts', key: 'accounts' as const },
   { label: 'Invoices', key: 'invoices' as const },
+  { label: 'Assistant', key: 'assistant' as const },
 ];
 
 export const LAYOUT = {

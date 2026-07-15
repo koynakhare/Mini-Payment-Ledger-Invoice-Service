@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Box, Button, Card, CardContent, Typography } from '@mui/material';
 import PaymentIcon from '@mui/icons-material/Payment';
 import {
@@ -10,7 +10,10 @@ import {
 import { FormField, useFormState, type FormFieldConfig } from '../../components/form';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { useToast } from '../../components/ui/ToastProvider';
-import { useApplyPaymentMutation } from '../../api';
+import {
+  useApplyPaymentMutation,
+  useLazyPaymentComplianceReviewQuery,
+} from '../../api';
 import type { Invoice } from '../../types';
 import { convertCurrency } from '../../utils/convertCurrency';
 import {
@@ -21,6 +24,7 @@ import {
 import { getErrorMessage } from '../../utils/errors';
 import { gradientButtonSx } from '../../theme/buttonStyles';
 import { tokens } from '../../theme/tokens';
+import { ComplianceReviewPanel } from './ComplianceReviewPanel';
 
 interface ApplyPaymentFormProps {
   invoice: Invoice;
@@ -33,6 +37,7 @@ const buildInitialValues = (currency: CurrencyCode) => ({
 
 export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
   const [applyPayment, { isLoading: paying }] = useApplyPaymentMutation();
+  const [fetchReview, reviewState] = useLazyPaymentComplianceReviewQuery();
   const { showToast } = useToast();
   const { values, errors, updateValue, setFieldError } = useFormState(
     buildInitialValues(invoice.currency)
@@ -45,6 +50,19 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
     amountCents > 0 ? convertCurrency(amountCents, paymentCurrency, invoice.currency) : 0;
   const showConversionPreview =
     paymentCurrency !== invoice.currency && convertedPreviewCents > 0;
+
+  useEffect(() => {
+    if (amountCents <= 0) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void fetchReview({
+        invoiceId: invoice.id,
+        pendingPaymentAmountCents: convertedPreviewCents,
+      });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [amountCents, convertedPreviewCents, fetchReview, invoice.id]);
 
   const amountField = useMemo<FormFieldConfig>(
     () => ({
@@ -122,6 +140,11 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
     }
   };
 
+  const reviewErrorMessage =
+    reviewState.isError && amountCents > 0
+      ? getErrorMessage(reviewState.error)
+      : undefined;
+
   return (
     <Card
       sx={{
@@ -189,6 +212,14 @@ export function ApplyPaymentForm({ invoice }: ApplyPaymentFormProps) {
           <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: tokens.color.inkMuted }}>
             Fixed rate: 1 USD = {CURRENCY_CONFIG.USD_TO_INR} INR
           </Typography>
+        ) : null}
+
+        {amountCents > 0 ? (
+          <ComplianceReviewPanel
+            loading={reviewState.isFetching || reviewState.isLoading}
+            errorMessage={reviewErrorMessage}
+            review={reviewState.data}
+          />
         ) : null}
       </CardContent>
     </Card>

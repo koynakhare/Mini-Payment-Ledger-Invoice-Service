@@ -1,7 +1,14 @@
 import { getInvoicePdfUrl } from '../constants/apiEndpoints';
+import { getStoredToken } from '../auth/authStorage';
 
 export async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string): Promise<void> {
-  const response = await fetch(getInvoicePdfUrl(invoiceId));
+  const headers: Record<string, string> = {};
+  const token = getStoredToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(getInvoicePdfUrl(invoiceId), { headers });
 
   if (!response.ok) {
     let message = 'Failed to download invoice PDF';

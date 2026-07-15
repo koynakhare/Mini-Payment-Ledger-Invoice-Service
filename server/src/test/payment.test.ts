@@ -8,13 +8,17 @@ import {
   gqlExpectError,
   mutateApplyPayment,
   queryInvoice,
+  ensureApproverAuth,
   resetDatabase,
   sendInvoice,
   teardownTestServer,
 } from './helpers.js';
 
 describe('payment', () => {
-  beforeEach(async () => { await resetDatabase(); });
+  beforeEach(async () => {
+    await resetDatabase();
+    await ensureApproverAuth();
+  });
 
   after(async () => {
     await teardownTestServer();

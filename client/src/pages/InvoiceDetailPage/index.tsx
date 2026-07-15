@@ -3,6 +3,7 @@ import { Box, Button, Card, CardContent, Grid, Skeleton } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import DownloadIcon from '@mui/icons-material/Download';
 import { useParams } from 'react-router-dom';
+import { useAuth } from '../../auth';
 import { useGetInvoiceQuery } from '../../api';
 import {
   Breadcrumbs,
@@ -29,6 +30,7 @@ import { SendInvoiceDialog } from './SendInvoiceDialog';
 
 export function InvoiceDetailPage() {
   const { invoiceId } = useParams<{ invoiceId: string }>();
+  const { isApprover } = useAuth();
   const { data: invoice, isLoading, isError, error } = useGetInvoiceQuery(invoiceId ?? '', {
     skip: !invoiceId,
   });
@@ -77,8 +79,8 @@ export function InvoiceDetailPage() {
     );
   }
 
-  const canPay = PAYABLE_INVOICE_STATUSES.includes(invoice.status);
-  const canSend = invoice.status === INVOICE_STATUS.DRAFT;
+  const canPay = isApprover && PAYABLE_INVOICE_STATUSES.includes(invoice.status);
+  const canSend = isApprover && invoice.status === INVOICE_STATUS.DRAFT;
 
   const handleDownloadPdf = async () => {
     setDownloadingPdf(true);
@@ -134,6 +136,7 @@ export function InvoiceDetailPage() {
       <PaymentHistoryTable
         payments={invoice.payments}
         invoiceCurrency={invoice.currency}
+        canReverse={isApprover}
         onReverse={(payment, type) => setReverseTarget({ payment, type })}
       />
       <ReversalsTable reversals={invoice.reversals} invoiceCurrency={invoice.currency} />

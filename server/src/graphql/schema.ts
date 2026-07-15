@@ -30,6 +30,77 @@ export const typeDefs = gql`
     INR
   }
 
+  enum Role {
+    VIEWER
+    APPROVER
+  }
+
+  enum ComplianceFlagType {
+    DUPLICATE_INVOICE
+    AMOUNT_ANOMALY
+    DATE_MISMATCH
+    VELOCITY_ANOMALY
+    OTHER
+  }
+
+  enum ComplianceSeverity {
+    info
+    low
+    medium
+    high
+  }
+
+  type User {
+    id: ID!
+    email: String!
+    role: Role!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type AuthPayload {
+    token: String!
+    user: User!
+  }
+
+  type ComplianceFlag {
+    type: ComplianceFlagType!
+    severity: ComplianceSeverity!
+    rationale: String!
+  }
+
+  type ComplianceReview {
+    available: Boolean!
+    summary: String!
+    flags: [ComplianceFlag!]!
+  }
+
+  type LedgerAssistantAnswer {
+    answered: Boolean!
+    operation: String!
+    answer: String!
+  }
+
+  type ExtractedLineItemDraft {
+    description: String
+    quantity: Int
+    unitPriceCents: Int
+    confidence: String!
+  }
+
+  type InvoiceExtractionDraft {
+    available: Boolean!
+    message: String!
+    vendorName: String
+    matchedVendorId: ID
+    invoiceNumber: String
+    dueDate: String
+    currency: Currency
+    lineItems: [ExtractedLineItemDraft!]!
+    missingFields: [String!]!
+    aiFilledFields: [String!]!
+  }
+
   type Vendor {
     id: ID!
     name: String!
@@ -203,6 +274,7 @@ export const typeDefs = gql`
   }
 
   type Query {
+    me: User!
     accounts: [Account!]!
     account(id: ID!): Account
     accountStatement(accountId: ID!): [AccountStatementLine!]!
@@ -212,9 +284,17 @@ export const typeDefs = gql`
     invoices(status: InvoiceStatus): [Invoice!]!
     invoice(id: ID!): Invoice
     transaction(id: ID!): Transaction
+    paymentComplianceReview(invoiceId: ID!, pendingPaymentAmountCents: Int): ComplianceReview!
+    askLedgerAssistant(question: String!): LedgerAssistantAnswer!
+    extractInvoiceFromDocument(
+      documentText: String
+      documentBase64: String
+      mimeType: String
+    ): InvoiceExtractionDraft!
   }
 
   type Mutation {
+    login(email: String!, password: String!): AuthPayload!
     createVendor(input: CreateVendorInput!): Vendor!
     createAccount(input: CreateAccountInput!): CreateAccountPayload!
     recordTransaction(input: CreateTransactionInput!): Transaction!

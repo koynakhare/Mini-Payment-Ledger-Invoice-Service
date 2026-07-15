@@ -64,6 +64,14 @@ export class InvoiceRepository {
     return rows.map(mapInvoice);
   }
 
+  async findByVendorId(vendorId: string): Promise<Invoice[]> {
+    const rows = await queryAll<InvoiceRow>(
+      'SELECT * FROM invoices WHERE vendor_id = $1 ORDER BY created_at DESC',
+      [vendorId]
+    );
+    return rows.map(mapInvoice);
+  }
+
   async findById(id: string): Promise<Invoice | null> {
     const row = await queryOne<InvoiceRow>('SELECT * FROM invoices WHERE id = $1', [id]);
     return row ? mapInvoice(row) : null;

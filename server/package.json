@@ -9,22 +9,28 @@
     "start": "node dist/index.js",
     "db:migrate": "node ./node_modules/tsx/dist/cli.mjs src/db/migrate.ts",
     "db:seed": "node ./node_modules/tsx/dist/cli.mjs src/db/seed.ts",
+    "db:create-user": "node ./node_modules/tsx/dist/cli.mjs src/db/createUser.ts",
     "job:overdue": "node ./node_modules/tsx/dist/cli.mjs src/jobs/overdueInvoices.ts",
-    "test": "node --import tsx --test src/test/ledger.test.ts src/test/invoice.test.ts src/test/payment.test.ts src/test/refund.test.ts src/test/concurrency.test.ts src/test/currency.test.ts"
+    "test": "node --import tsx --test src/test/ledger.test.ts src/test/invoice.test.ts src/test/payment.test.ts src/test/refund.test.ts src/test/concurrency.test.ts src/test/currency.test.ts src/test/auth.test.ts src/test/compliance.test.ts src/test/assistant.test.ts src/test/extraction.test.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.11.3",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.21.2",
     "graphql": "^16.10.0",
     "graphql-tag": "^2.12.6",
+    "jsonwebtoken": "^9.0.3",
     "lodash": "^4.17.21",
     "pdfkit": "^0.19.1",
     "pg": "^8.22.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/lodash": "^4.17.15",
     "@types/node": "^22.13.4",
     "@types/pdfkit": "^0.17.6",

@@ -10,6 +10,7 @@ import {
   queryAccountBalance,
   queryLedgerIntegrity,
   queryTransactionEntries,
+  ensureApproverAuth,
   resetDatabase,
   sumAllAccountBalances,
   teardownTestServer,
@@ -18,6 +19,7 @@ import {
 describe('ledger', () => {
   beforeEach(async () => {
     await resetDatabase();
+    await ensureApproverAuth();
   });
 
   after(async () => {

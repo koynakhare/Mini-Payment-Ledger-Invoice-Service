@@ -8,6 +8,7 @@ import {
   useGetInvoicesQuery,
   useMarkOverdueInvoicesMutation,
 } from '../../api';
+import { useAuth } from '../../auth';
 import { Loader, StatusBadge, Table, type TableColumn } from '../../components/common';
 import { MoneyAmount } from '../../components/ui/MoneyAmount';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -32,6 +33,7 @@ export function InvoiceListPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const { showToast } = useToast();
+  const { isApprover } = useAuth();
 
   const status = statusFilter === INVOICE_STATUS_FILTER_ALL ? undefined : statusFilter;
   const { data: invoices, isLoading, isError, error } = useGetInvoicesQuery(status);
@@ -166,27 +168,32 @@ export function InvoiceListPage() {
         title="Invoices"
         subtitle="Track vendor bills from draft through payment"
         actions={
-          <>
-            <Button
-              variant="outlined"
-              startIcon={<ScheduleOutlinedIcon />}
-              onClick={handleMarkOverdue}
-              disabled={markingOverdue}
-            >
-              {markingOverdue ? 'Running…' : 'Run Overdue Job'}
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setCreateOpen(true)}
-              sx={{
-                background: tokens.color.accentGradient,
-                '&:hover': { background: tokens.color.accentGradient, filter: 'brightness(1.06)' },
-              }}
-            >
-              New Invoice
-            </Button>
-          </>
+          isApprover ? (
+            <>
+              <Button
+                variant="outlined"
+                startIcon={<ScheduleOutlinedIcon />}
+                onClick={handleMarkOverdue}
+                disabled={markingOverdue}
+              >
+                {markingOverdue ? 'Running…' : 'Run Overdue Job'}
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateOpen(true)}
+                sx={{
+                  background: tokens.color.accentGradient,
+                  '&:hover': {
+                    background: tokens.color.accentGradient,
+                    filter: 'brightness(1.06)',
+                  },
+                }}
+              >
+                New Invoice
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
@@ -266,7 +273,7 @@ export function InvoiceListPage() {
               : 'Try a different filter or create a new invoice.'
           }
           emptyAction={
-            statusFilter === INVOICE_STATUS_FILTER_ALL ? (
+            isApprover && statusFilter === INVOICE_STATUS_FILTER_ALL ? (
               <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)}>
                 Create Invoice
               </Button>

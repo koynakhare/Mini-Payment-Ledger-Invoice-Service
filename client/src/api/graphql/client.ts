@@ -1,4 +1,5 @@
 import { GRAPHQL_BASE_URL } from '../../constants/apiEndpoints';
+import { getStoredToken } from '../../auth/authStorage';
 import { ApiError, parseGraphQLErrors, parseHttpError } from './errors';
 
 export interface GraphQLResponse<T> {
@@ -15,10 +16,18 @@ export async function graphqlRequest<T>(
 ): Promise<T> {
   let response: Response;
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const token = getStoredToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   try {
     response = await fetch(GRAPHQL_BASE_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables }),
     });
   } catch {
@@ -57,7 +66,6 @@ export async function graphqlRequest<T>(
     throw new ApiError({
       code: 'GRAPHQL_ERROR',
       message: 'No data returned from the server.',
-      status: response.status,
     });
   }
 

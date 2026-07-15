@@ -10,13 +10,17 @@ import {
   mutateReversePayment,
   queryInvoice,
   queryLedgerIntegrity,
+  ensureApproverAuth,
   resetDatabase,
   sendInvoice,
   teardownTestServer,
 } from './helpers.js';
 
 describe('refund', () => {
-  beforeEach(async () => { await resetDatabase(); });
+  beforeEach(async () => {
+    await resetDatabase();
+    await ensureApproverAuth();
+  });
 
   after(async () => {
     await teardownTestServer();

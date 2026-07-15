@@ -11,16 +11,18 @@ import { formatDateTime, formatPaymentDisplay } from '../../utils/format';
 interface PaymentHistoryTableProps {
   payments: Payment[];
   invoiceCurrency: CurrencyCode;
+  canReverse?: boolean;
   onReverse: (payment: Payment, type: ReversalType) => void;
 }
 
 export function PaymentHistoryTable({
   payments,
   invoiceCurrency,
+  canReverse = true,
   onReverse,
 }: PaymentHistoryTableProps) {
-  const columns = useMemo<TableColumn<Payment>[]>(
-    () => [
+  const columns = useMemo<TableColumn<Payment>[]>(() => {
+    const base: TableColumn<Payment>[] = [
       {
         id: 'date',
         label: 'Date',
@@ -72,6 +74,14 @@ export function PaymentHistoryTable({
           </Box>
         ),
       },
+    ];
+
+    if (!canReverse) {
+      return base;
+    }
+
+    return [
+      ...base,
       {
         id: 'actions',
         label: 'Actions',
@@ -98,9 +108,8 @@ export function PaymentHistoryTable({
             </Stack>
           ) : null,
       },
-    ],
-    [invoiceCurrency, onReverse]
-  );
+    ];
+  }, [canReverse, invoiceCurrency, onReverse]);
 
   return (
     <>

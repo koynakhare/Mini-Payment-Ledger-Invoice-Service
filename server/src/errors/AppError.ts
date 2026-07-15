@@ -5,6 +5,8 @@ export type ErrorCode =
   | 'UNBALANCED_ENTRY'
   | 'OVERPAYMENT'
   | 'INVALID_STATUS'
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
   | 'INTERNAL_ERROR';
 
 export class AppError extends Error {

@@ -13,7 +13,11 @@ export type InvoiceStatus =
 
 export type ReversalType = 'refund' | 'void';
 
+export type UserRole = 'VIEWER' | 'APPROVER';
+
 export type { CurrencyCode };
+
+export type { AuthUser, User } from '../auth/types.js';
 
 export interface Vendor {
   id: string;

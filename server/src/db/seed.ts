@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { queryOne } from './connection.js';
 import { systemAccountService, vendorService } from '../services/index.js';
 

@@ -1,5 +1,15 @@
-import { useMemo } from 'react';
-import { Button } from '@mui/material';
+import { useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import isEmpty from 'lodash/isEmpty.js';
 import trim from 'lodash/trim.js';
 import {
@@ -18,17 +28,29 @@ import {
 import {
   useCreateInvoiceMutation,
   useCreateVendorMutation,
+  useExtractInvoiceFromDocumentMutation,
   useGetVendorsQuery,
 } from '../../api';
 import { useToast } from '../../components/ui/ToastProvider';
 import { getErrorMessage } from '../../utils/errors';
+import { tokens } from '../../theme/tokens';
+import type { InvoiceExtractionDraft } from '../../types';
 
 interface CreateInvoiceDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-const INITIAL_VALUES = {
+const INITIAL_VALUES: {
+  vendorId: string;
+  newVendorName: string;
+  invoiceNumber: string;
+  dueDate: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  currency: CurrencyCode;
+} = {
   vendorId: '',
   newVendorName: '',
   invoiceNumber: '',
@@ -39,14 +61,31 @@ const INITIAL_VALUES = {
   currency: CURRENCY_CONFIG.DEFAULT_CURRENCY,
 };
 
+function aiHelper(field: string, draft: InvoiceExtractionDraft | null, base?: string): string | undefined {
+  if (!draft?.available) return base;
+  if (draft.aiFilledFields.includes(field)) {
+    return base ? `${base} · AI-extracted — review before submit` : 'AI-extracted — review before submit';
+  }
+  if (draft.missingFields.includes(field)) {
+    return base ? `${base} · Needs manual entry` : 'Needs manual entry';
+  }
+  return base;
+}
+
 export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps) {
   const { data: vendorsData, isLoading: vendorsLoading } = useGetVendorsQuery();
   const vendors = Array.isArray(vendorsData) ? vendorsData : [];
   const [createInvoice, { isLoading, error }] = useCreateInvoiceMutation();
   const [createVendor, { isLoading: creatingVendor }] = useCreateVendorMutation();
+  const [extractInvoice, { isLoading: extracting }] = useExtractInvoiceFromDocumentMutation();
   const { showToast } = useToast();
+  const [documentText, setDocumentText] = useState('');
+  const [extractionDraft, setExtractionDraft] = useState<InvoiceExtractionDraft | null>(null);
+  const [extractionError, setExtractionError] = useState('');
+  const [extraLineItemsNote, setExtraLineItemsNote] = useState('');
 
-  const { values, errors, updateValue, setFieldErrors, reset, getValue } = useFormState(INITIAL_VALUES);
+  const { values, errors, updateValue, setFieldErrors, reset, getValue, setValues } =
+    useFormState(INITIAL_VALUES);
 
   const vendorOptions = useMemo(
     () => mapToFieldOptions(vendors, (vendor) => vendor.id, (vendor) => vendor.name),
@@ -66,10 +105,13 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
         loadingLabel: 'Loading vendors…',
         emptyLabel: 'No vendors yet — use the field below',
         options: vendorOptions,
-        helperText:
+        helperText: aiHelper(
+          'vendorName',
+          extractionDraft,
           !vendorsLoading && vendors.length === 0
             ? 'No vendors in the database yet. Enter a new vendor name below.'
-            : undefined,
+            : undefined
+        ),
         renderValue: (selected) => {
           if (!selected) {
             if (vendorsLoading) return 'Loading vendors…';
@@ -83,18 +125,24 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
         type: 'text',
         name: 'newVendorName',
         label: 'Or New Vendor Name',
-        helperText: 'Creates a vendor and payable account on first invoice',
+        helperText: aiHelper(
+          'vendorName',
+          extractionDraft,
+          'Creates a vendor and payable account on first invoice'
+        ),
       },
       {
         type: 'text',
         name: 'invoiceNumber',
         label: 'Invoice Number',
+        helperText: aiHelper('invoiceNumber', extractionDraft),
       },
       {
         type: 'date',
         name: 'dueDate',
         label: 'Due Date',
         inputLabelShrink: true,
+        helperText: aiHelper('dueDate', extractionDraft),
       },
       {
         type: 'select',
@@ -104,24 +152,137 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
           value: option.value,
           label: option.label,
         })),
+        helperText: aiHelper('currency', extractionDraft),
       },
       {
         type: 'text',
         name: 'description',
         label: 'Line Item Description',
+        helperText: aiHelper('lineItems', extractionDraft),
       },
       {
         type: 'number',
         name: 'quantity',
         label: 'Quantity',
+        helperText: aiHelper('lineItems', extractionDraft),
       },
       {
         type: 'number',
         name: 'unitPrice',
         label: `Unit Price (${CURRENCY_SYMBOLS[currency]})`,
+        helperText: aiHelper('lineItems', extractionDraft),
       },
     ];
-  }, [values.currency, vendorOptions, vendors, vendorsLoading]);
+  }, [extractionDraft, values.currency, vendorOptions, vendors, vendorsLoading]);
+
+  const applyDraft = (draft: InvoiceExtractionDraft) => {
+    const first = draft.lineItems.find(
+      (item) => item.description && item.quantity && item.unitPriceCents !== null
+    );
+    setValues((prev) => ({
+      ...prev,
+      vendorId: draft.matchedVendorId ?? '',
+      newVendorName: draft.matchedVendorId ? '' : draft.vendorName ?? '',
+      invoiceNumber: draft.invoiceNumber ?? prev.invoiceNumber,
+      dueDate: draft.dueDate ?? prev.dueDate,
+      currency: draft.currency ?? prev.currency,
+      description: first?.description ?? prev.description,
+      quantity: first?.quantity ? String(first.quantity) : prev.quantity,
+      unitPrice:
+        first?.unitPriceCents !== null && first?.unitPriceCents !== undefined
+          ? (first.unitPriceCents / 100).toFixed(2)
+          : prev.unitPrice,
+    }));
+
+    const extras = draft.lineItems.slice(1).filter((item) => item.description);
+    setExtraLineItemsNote(
+      extras.length
+        ? `AI found ${extras.length} additional line item(s) not shown in this form. Add them manually if needed: ${extras
+            .map((item) => item.description)
+            .join('; ')}`
+        : ''
+    );
+  };
+
+  const handleExtract = async () => {
+    setExtractionError('');
+    const text = documentText.trim();
+    if (!text) {
+      setExtractionError('Paste invoice text or upload a file first.');
+      return;
+    }
+    try {
+      const draft = await extractInvoice({ documentText: text }).unwrap();
+      setExtractionDraft(draft);
+      if (draft.available) {
+        applyDraft(draft);
+        showToast('Draft fields pre-filled from the document. Review before creating.', 'success');
+      } else {
+        showToast(draft.message, 'error');
+      }
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setExtractionError(message);
+      setExtractionDraft(null);
+      showToast(message, 'error');
+    }
+  };
+
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    setExtractionError('');
+    try {
+      if (file.type.startsWith('text/') || file.name.toLowerCase().endsWith('.txt')) {
+        const text = await file.text();
+        setDocumentText(text);
+        const draft = await extractInvoice({ documentText: text }).unwrap();
+        setExtractionDraft(draft);
+        if (draft.available) {
+          applyDraft(draft);
+          showToast('Draft fields pre-filled from the file. Review before creating.', 'success');
+        } else {
+          showToast(draft.message, 'error');
+        }
+        return;
+      }
+
+      const isPdf =
+        file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImage = file.type.startsWith('image/');
+      if (!isPdf && !isImage) {
+        setExtractionError('Supported uploads: plain text, PDF, or image files (PNG/JPEG/WebP).');
+        return;
+      }
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const mimeType = isPdf ? 'application/pdf' : file.type || 'image/png';
+      const draft = await extractInvoice({
+        documentBase64: base64,
+        mimeType,
+      }).unwrap();
+      setExtractionDraft(draft);
+      if (draft.available) {
+        applyDraft(draft);
+        showToast(
+          `Draft fields pre-filled from the ${isPdf ? 'PDF' : 'image'}. Review before creating.`,
+          'success'
+        );
+      } else {
+        showToast(draft.message, 'error');
+      }
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setExtractionError(message);
+      setExtractionDraft(null);
+      showToast(message, 'error');
+    }
+  };
 
   const handleChange = (name: string, value: string) => {
     if (name === 'newVendorName' && value) {
@@ -186,6 +347,9 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
       }).unwrap();
       showToast('Invoice created successfully.', 'success');
       reset();
+      setDocumentText('');
+      setExtractionDraft(null);
+      setExtraLineItemsNote('');
       onClose();
     } catch {
       showToast('Failed to create invoice.', 'error');
@@ -194,17 +358,21 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
 
   const handleClose = () => {
     reset();
+    setDocumentText('');
+    setExtractionDraft(null);
+    setExtractionError('');
+    setExtraLineItemsNote('');
     onClose();
   };
 
-  const isBusy = isLoading || creatingVendor;
+  const isBusy = isLoading || creatingVendor || extracting;
 
   return (
     <AppDialog
       open={open}
       onClose={handleClose}
       title="Create Invoice"
-      description="Record a new vendor bill as a draft. A dedicated payable account is created automatically for new vendors."
+      description="Record a new vendor bill as a draft. Optionally extract fields from a document — a human still reviews and submits."
       error={error ? getErrorMessage(error) : undefined}
       confirmLabel="Create Invoice"
       confirmLoadingLabel="Creating"
@@ -217,11 +385,102 @@ export function CreateInvoiceDialog({ open, onClose }: CreateInvoiceDialogProps)
             Cancel
           </Button>
           <Button variant="contained" onClick={handleSubmit} disabled={isBusy}>
-            {isBusy ? 'Creating…' : 'Create Invoice'}
+            {isBusy && !extracting ? 'Creating…' : 'Create Invoice'}
           </Button>
         </>
       }
     >
+      <Box
+        sx={{
+          mb: 2.5,
+          p: 2,
+          border: `1px solid ${tokens.color.border}`,
+          bgcolor: tokens.color.surfaceMuted,
+        }}
+      >
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+          <AutoAwesomeOutlinedIcon fontSize="small" sx={{ color: tokens.color.accent }} />
+          <Typography variant="subtitle2">Extract from document (experimental)</Typography>
+        </Stack>
+        <Typography variant="caption" sx={{ display: 'block', mb: 1.5, color: tokens.color.inkMuted }}>
+          Paste invoice text or upload a text, PDF, or image file. Extraction pre-fills the form only —
+          nothing is saved until you click Create Invoice.
+        </Typography>
+        <TextField
+          label="Paste invoice text"
+          value={documentText}
+          onChange={(event) => setDocumentText(event.target.value)}
+          fullWidth
+          multiline
+          minRows={3}
+          disabled={isBusy}
+          sx={{ mb: 1.5 }}
+        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<UploadFileOutlinedIcon />}
+            component="label"
+            disabled={isBusy}
+          >
+            Upload file
+            <input
+              hidden
+              type="file"
+              accept="text/plain,application/pdf,image/png,image/jpeg,image/webp,.txt,.pdf"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                void handleFile(file);
+                event.target.value = '';
+              }}
+            />
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AutoAwesomeOutlinedIcon />}
+            onClick={() => void handleExtract()}
+            disabled={isBusy || !documentText.trim()}
+          >
+            {extracting ? 'Extracting…' : 'Extract draft fields'}
+          </Button>
+        </Stack>
+        {extractionError ? (
+          <Alert severity="warning" sx={{ mt: 1.5, borderRadius: 0 }}>
+            {extractionError}
+          </Alert>
+        ) : null}
+        {extractionDraft?.available ? (
+          <Box sx={{ mt: 1.5 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              {extractionDraft.message}
+            </Typography>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
+              {extractionDraft.aiFilledFields.map((field) => (
+                <Chip
+                  key={`ai-${field}`}
+                  size="small"
+                  label={`AI: ${field}`}
+                  sx={{ borderRadius: 0, bgcolor: tokens.color.accentMuted, color: tokens.color.accent }}
+                />
+              ))}
+              {extractionDraft.missingFields.map((field) => (
+                <Chip
+                  key={`miss-${field}`}
+                  size="small"
+                  label={`Needs entry: ${field}`}
+                  sx={{ borderRadius: 0, bgcolor: tokens.color.warningMuted, color: tokens.color.warning }}
+                />
+              ))}
+            </Stack>
+          </Box>
+        ) : null}
+        {extraLineItemsNote ? (
+          <Alert severity="info" sx={{ mt: 1.5, borderRadius: 0 }}>
+            {extraLineItemsNote}
+          </Alert>
+        ) : null}
+      </Box>
+
       <FormFields fields={fields} values={values} errors={errors} onChange={handleChange} />
     </AppDialog>
   );

@@ -1,4 +1,5 @@
 import { ApolloServer } from '@apollo/server';
+import type { GraphQLContext } from '../auth/types.js';
 import { closeDb } from '../db/connection.js';
 import { runMigrations } from '../db/migrations.js';
 import { resolvers } from '../graphql/resolvers.js';
@@ -7,25 +8,80 @@ import { AccountRepository } from '../repositories/AccountRepository.js';
 import { PaymentRepository } from '../repositories/PaymentRepository.js';
 import {
   accountService,
+  authService,
+  complianceReviewService,
+  invoiceExtractionService,
   invoiceService,
+  ledgerAssistantService,
   paymentService,
   systemAccountService,
   vendorService,
 } from '../services/index.js';
-import type { CurrencyCode, Invoice } from '../types/index.js';
+import type { AuthUser, CurrencyCode, Invoice, UserRole } from '../types/index.js';
 
-let apolloServer: ApolloServer | null = null;
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-do-not-use-in-production';
+
+let apolloServer: ApolloServer<GraphQLContext> | null = null;
+let defaultAuthContext: GraphQLContext = { user: null };
 
 export async function resetDatabase(): Promise<void> {
   await closeDb();
   delete process.env.DATABASE_URL;
   process.env.DATABASE_PATH = ':memory:';
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-do-not-use-in-production';
   await runMigrations();
   await systemAccountService.ensureCompanyBankAccount();
   await systemAccountService.ensureExpenseAccount();
+  defaultAuthContext = { user: null };
 }
 
-export async function getTestServer(): Promise<ApolloServer> {
+export async function ensureTestUser(
+  role: UserRole = 'APPROVER',
+  email = `approver-${role.toLowerCase()}@test.local`,
+  password = 'password123'
+) {
+  const existingLogin = await authService.login(email, password).catch(() => null);
+  if (existingLogin) {
+    defaultAuthContext = {
+      user: {
+        id: existingLogin.user.id,
+        email: existingLogin.user.email,
+        role: existingLogin.user.role,
+      },
+    };
+    return existingLogin;
+  }
+
+  try {
+    await authService.createUser(email, password, role);
+  } catch {
+    // may already exist from a concurrent create in the same DB session
+  }
+
+  const login = await authService.login(email, password);
+  defaultAuthContext = {
+    user: {
+      id: login.user.id,
+      email: login.user.email,
+      role: login.user.role,
+    },
+  };
+  return login;
+}
+
+export async function ensureApproverAuth(): Promise<void> {
+  await ensureTestUser('APPROVER', 'approver@test.local', 'password123');
+}
+
+export function setAuthContext(user: AuthUser | null): void {
+  defaultAuthContext = { user };
+}
+
+export function clearAuthContext(): void {
+  defaultAuthContext = { user: null };
+}
+
+export async function getTestServer(): Promise<ApolloServer<GraphQLContext>> {
   if (!apolloServer) {
     apolloServer = new ApolloServer({ typeDefs, resolvers });
     await apolloServer.start();
@@ -50,18 +106,26 @@ export interface GqlResult<T> {
 
 export async function gql<T = Record<string, unknown>>(
   query: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
+  contextValue?: GraphQLContext
 ): Promise<GqlResult<T>> {
   const server = await getTestServer();
-  const response = await server.executeOperation({ query, variables });
+  const response = await server.executeOperation(
+    { query, variables },
+    { contextValue: contextValue ?? defaultAuthContext }
+  );
   if (response.body.kind !== 'single') {
     throw new Error('Unexpected incremental GraphQL response');
   }
   return response.body.singleResult as GqlResult<T>;
 }
 
-export async function gqlData<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-  const result = await gql<T>(query, variables);
+export async function gqlData<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  contextValue?: GraphQLContext
+): Promise<T> {
+  const result = await gql<T>(query, variables, contextValue);
   if (result.errors?.length) {
     throw new Error(result.errors[0].message);
   }
@@ -70,13 +134,26 @@ export async function gqlData<T>(query: string, variables?: Record<string, unkno
 
 export async function gqlExpectError(
   query: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
+  contextValue?: GraphQLContext
 ): Promise<string> {
-  const result = await gql(query, variables);
+  const result = await gqlExpectErrorDetails(query, variables, contextValue);
+  return result.message;
+}
+
+export async function gqlExpectErrorDetails(
+  query: string,
+  variables?: Record<string, unknown>,
+  contextValue?: GraphQLContext
+): Promise<{ message: string; code?: string }> {
+  const result = await gql(query, variables, contextValue);
   if (!result.errors?.length) {
     throw new Error('Expected GraphQL error but request succeeded');
   }
-  return result.errors[0].message;
+  return {
+    message: result.errors[0].message,
+    code: result.errors[0].extensions?.code,
+  };
 }
 
 const ACCOUNT_FIELDS = `
@@ -105,7 +182,12 @@ export async function queryAccountBalance(accountId: string): Promise<number> {
 }
 
 export async function mutateCreateAccount(name: string, accountType: string) {
-  return gqlData<{ createAccount: { account: { id: string; name: string; balanceCents: number } | null; error: string | null } }>(
+  return gqlData<{
+    createAccount: {
+      account: { id: string; name: string; balanceCents: number } | null;
+      error: string | null;
+    };
+  }>(
     `mutation ($input: CreateAccountInput!) {
       createAccount(input: $input) {
         account { ${ACCOUNT_FIELDS} }
@@ -118,7 +200,12 @@ export async function mutateCreateAccount(name: string, accountType: string) {
 
 export async function mutateRecordTransaction(input: {
   description: string;
-  entries: Array<{ accountId: string; amountCents: number; entryType: string; currency?: string }>;
+  entries: Array<{
+    accountId: string;
+    amountCents: number;
+    entryType: string;
+    currency?: string;
+  }>;
 }) {
   return gql(
     `mutation ($input: CreateTransactionInput!) {
@@ -144,7 +231,13 @@ export async function mutateCreateInvoice(input: {
   currency?: CurrencyCode;
   lineItems: Array<{ description: string; quantity: number; unitPriceCents: number }>;
 }) {
-  return gqlData<{ createInvoice: Invoice & { totalCents: number; paidCents: number; remainingCents: number } }>(
+  return gqlData<{
+    createInvoice: Invoice & {
+      totalCents: number;
+      paidCents: number;
+      remainingCents: number;
+    };
+  }>(
     `mutation ($input: CreateInvoiceInput!) {
       createInvoice(input: $input) { ${INVOICE_FIELDS} }
     }`,
@@ -205,7 +298,14 @@ export async function mutateMarkOverdue(asOfDate: string) {
 }
 
 export async function queryInvoice(invoiceId: string) {
-  const data = await gqlData<{ invoice: { status: string; totalCents: number; paidCents: number; remainingCents: number } }>(
+  const data = await gqlData<{
+    invoice: {
+      status: string;
+      totalCents: number;
+      paidCents: number;
+      remainingCents: number;
+    };
+  }>(
     `query ($id: ID!) {
       invoice(id: $id) { status totalCents paidCents remainingCents }
     }`,
@@ -297,4 +397,13 @@ export async function sendInvoice(invoiceId: string, vendorEmail = 'vendor@test.
   return invoiceService.sendInvoice(invoiceId, vendorEmail);
 }
 
-export { accountService, invoiceService, paymentService, vendorService };
+export {
+  accountService,
+  authService,
+  complianceReviewService,
+  invoiceExtractionService,
+  invoiceService,
+  ledgerAssistantService,
+  paymentService,
+  vendorService,
+};

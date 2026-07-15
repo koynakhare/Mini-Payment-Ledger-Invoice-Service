@@ -167,6 +167,14 @@ export function AssistantPage() {
           gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
           gap: 1.5,
           alignItems: 'start',
+          p: { xs: 2, sm: 2.5 },
+          bgcolor: tokens.color.primaryMuted,
+          border: `1px solid ${tokens.color.border}`,
+          borderTop: `3px solid ${tokens.color.accent}`,
+          boxShadow: tokens.shadow.card,
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10,
         }}
       >
         <TextField
@@ -185,13 +193,38 @@ export function AssistantPage() {
           minRows={2}
           disabled={isLoading}
           helperText="Press Enter to ask · Shift+Enter for a new line"
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              bgcolor: tokens.color.surface,
+              borderRadius: '6px',
+              '& fieldset': {
+                borderColor: tokens.color.border,
+                borderWidth: 1,
+              },
+              '&:hover fieldset': {
+                borderColor: tokens.color.inkMuted,
+              },
+              '&.Mui-focused': {
+                boxShadow: 'none',
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: tokens.color.accent,
+                borderWidth: 1,
+              },
+            },
+          }}
         />
         <Button
           type="submit"
           variant="contained"
           startIcon={<SendIcon />}
           disabled={isLoading || !question.trim()}
-          sx={{ ...gradientButtonSx, height: { sm: 56 }, minWidth: 120 }}
+          sx={{
+            ...gradientButtonSx,
+            height: { sm: 56 },
+            minWidth: 120,
+            borderRadius: '6px',
+          }}
         >
           Ask
         </Button>

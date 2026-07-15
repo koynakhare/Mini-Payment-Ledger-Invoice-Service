@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Container,
   Drawer,
   IconButton,
   List,
@@ -255,6 +254,9 @@ export function Layout() {
               borderBottom: `1px solid ${tokens.color.borderSubtle}`,
               bgcolor: tokens.color.surface,
               flexShrink: 0,
+              position: 'sticky',
+              top: 0,
+              zIndex: 30,
             }}
           >
             <IconButton edge="start" onClick={() => setMobileOpen(true)} aria-label="Open menu">
@@ -266,19 +268,29 @@ export function Layout() {
           </Toolbar>
         ) : null}
 
-        <Container
-          maxWidth="lg"
-          disableGutters={isMobile}
+        <Box
           sx={{
             flex: 1,
-            overflow: 'auto',
-            py: { xs: 2, md: 3 },
+            minHeight: 0,
+            width: '100%',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            py: { xs: 2, md: 2.5 },
             px: { xs: 2, sm: 2.5, md: 3 },
             position: 'relative',
+            // Hide the always-visible thin scrollbar track; scrolling still works.
+            scrollbarWidth: 'thin',
+            scrollbarColor: `${tokens.color.border} transparent`,
+            '&::-webkit-scrollbar': { width: 8 },
+            '&::-webkit-scrollbar-thumb': {
+              bgcolor: tokens.color.border,
+              borderRadius: 4,
+            },
+            '&::-webkit-scrollbar-track': { bgcolor: 'transparent' },
           }}
         >
           <Outlet />
-        </Container>
+        </Box>
       </Box>
     </Box>
   );

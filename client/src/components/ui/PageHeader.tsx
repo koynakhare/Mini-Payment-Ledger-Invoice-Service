@@ -24,7 +24,9 @@ export function PageHeader({
         background: tokens.color.surface,
         border: `1px solid ${tokens.color.borderSubtle}`,
         boxShadow: tokens.shadow.card,
-        position: 'relative',
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
         overflow: 'hidden',
         '&::before': {
           content: '""',
@@ -45,7 +47,7 @@ export function PageHeader({
         spacing={2}
         sx={{ mt: breadcrumbs ? 1 : 0 }}
       >
-        <Box sx={{ minWidth: 0 }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography
             variant="h5"
             sx={{
@@ -58,7 +60,9 @@ export function PageHeader({
             {title}
           </Typography>
           {subtitle ? (
-            <Box sx={{ mt: 0.75, maxWidth: 560, wordBreak: 'break-word' }}>{subtitle}</Box>
+            <Box sx={{ mt: 0.75, maxWidth: { xs: '100%', md: '72ch' }, wordBreak: 'break-word' }}>
+              {subtitle}
+            </Box>
           ) : null}
         </Box>
         {actions ? (

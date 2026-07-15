@@ -1,21 +1,29 @@
-# Mini Payment Ledger & Invoice Service
+# TMS Payables — Mini Payment Ledger & Invoice Service
 
-A production-quality Accounts Payable module for a Transportation Management System (TMS), featuring double-entry ledger accounting, invoice lifecycle management, idempotent payments, and refund/void flows with full audit trails.
+Accounts Payable (AP) module for a Transportation Management System (TMS). It manages vendors, invoices, double-entry ledger postings, idempotent payments, and refund/void reversals — with an optional AI advisory layer (compliance review, ledger assistant, invoice document extraction) that never executes financial mutations on its own.
 
-## Production
+**In-app brand:** TMS Payables (sidebar / login). Some surfaces still say “TMS Accounts Payable” (HTML `<title>`, PDF header, email subject).
 
-- **Frontend (Vercel):** https://mini-payment-ledger-invoice-service-six.vercel.app/
-- **Backend API (Render):** https://mini-payment-ledger-invoice-service-1.onrender.com
-- **GraphQL endpoint:** https://mini-payment-ledger-invoice-service-1.onrender.com/graphql
-- **Database:** Supabase PostgreSQL, configured through the backend `DATABASE_URL`
+## Live deployment
 
-Production data is stored in Supabase PostgreSQL, so vendors, invoices, ledger entries, payments, and reversals persist across backend redeploys. SQLite is only used for local development when `DATABASE_URL` is not set.
+| Surface | URL |
+|---------|-----|
+| Frontend | [https://mini-payment-ledger-invoice-service.vercel.app/](https://mini-payment-ledger-invoice-service.vercel.app/) |
+| Login | [https://mini-payment-ledger-invoice-service.vercel.app/login](https://mini-payment-ledger-invoice-service.vercel.app/login) |
+| Backend API (Render) | [https://mini-payment-ledger-invoice-service-1.onrender.com](https://mini-payment-ledger-invoice-service-1.onrender.com) |
+| GraphQL | [https://mini-payment-ledger-invoice-service-1.onrender.com/graphql](https://mini-payment-ledger-invoice-service-1.onrender.com/graphql) |
+| Health | [https://mini-payment-ledger-invoice-service-1.onrender.com/health](https://mini-payment-ledger-invoice-service-1.onrender.com/health) |
+| Database | Supabase PostgreSQL via backend `DATABASE_URL` |
+
+Production data lives in Supabase PostgreSQL and survives backend redeploys. Locally, omitting `DATABASE_URL` uses SQLite (`DATABASE_PATH`, default `./data/ledger.db`).
+
+> Opening the Render root URL in a browser shows `Cannot GET /` — that is expected. Use `/graphql` or `/health`.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js **22+** (server uses `node:sqlite`)
 - npm
 
 ### 1. Backend
@@ -23,16 +31,28 @@ Production data is stored in Supabase PostgreSQL, so vendors, invoices, ledger e
 ```bash
 cd server
 npm install
-cp .env.example .env   # set JWT_SECRET (and DATABASE_URL if using Postgres)
+cp .env.example .env
+```
+
+Edit `server/.env` and set at least:
+
+```env
+JWT_SECRET=change-me-to-a-long-random-secret
+```
+
+Optional for production-like local data: set `DATABASE_URL` to your Supabase connection string.
+
+```bash
 npm run db:migrate
 npm run db:seed
-npm run db:create-user -- you@example.com 'your-password' APPROVER
+npm run db:create-user -- admin@example.com 'strong-password' APPROVER
+npm run db:create-user -- viewer@example.com 'strong-password' VIEWER
 npm run dev
 ```
 
-Local GraphQL playground: http://localhost:8266/graphql
-
-For production-like local development, add `DATABASE_URL` to `server/.env` so the backend connects to Supabase PostgreSQL. Without `DATABASE_URL`, it falls back to local SQLite.
+- GraphQL: [http://localhost:8266/graphql](http://localhost:8266/graphql)
+- If the role argument is omitted, `db:create-user` defaults to **APPROVER**.
+- Seed creates vendors/accounts only — **no login users**. Always create users via `db:create-user`.
 
 ### 2. Frontend
 
@@ -42,9 +62,9 @@ npm install
 npm run dev
 ```
 
-App: http://localhost:5173 (proxies `/graphql` to the backend). Unauthenticated users are redirected to `/login`.
+App: [http://localhost:5173](http://localhost:5173) (Vite proxies `/graphql` to the backend). Unauthenticated users go to `/login`.
 
-For deployed frontend builds, set:
+For a production frontend build aimed at the live API:
 
 ```env
 VITE_GRAPHQL_URL=https://mini-payment-ledger-invoice-service-1.onrender.com/graphql
@@ -53,72 +73,150 @@ VITE_GRAPHQL_URL=https://mini-payment-ledger-invoice-service-1.onrender.com/grap
 ## Architecture
 
 ```
-/server                    Backend (Node.js + Express + Apollo GraphQL)
+/server                         Express + Apollo GraphQL API
   src/
-    db/                    Database connection, migrations, seed (PostgreSQL/SQLite)
-    repositories/          Data access layer (SQL queries)
-    services/              Business logic (ledger, invoices, payments)
-    graphql/               Schema and thin resolvers
-    jobs/                  Overdue invoice batch job
-/client                    Frontend (React + RTK Query + MUI)
+    auth/                       JWT, bcrypt, requireAuth / requireApprover
+    config/                     Currency config (USD / INR rates)
+    db/                         Connection, migrations, seed, create-user CLI
+    email/                      SMTP / console email client (injectable)
+    graphql/                    Schema + thin resolvers
+    jobs/                       Overdue invoice batch job
+    llm/                        Shared Gemini llmClient (injectable / mockable)
+    pdf/                        Invoice PDF generation
+    repositories/               SQL data access
+    services/                   Business rules
+    test/                       Node.js test runner suites
+/client                         React + Vite + RTK Query + MUI
   src/
-    api/                   RTK Query endpoints (all GraphQL calls)
-    pages/                 Screen components
-    components/            Shared UI (layout, integrity widget)
+    api/                        GraphQL client helpers
+    auth/                       Token storage + AuthContext
+    components/                 Layout, forms, ledger integrity widget, tables
+    pages/                      Route screens (dashboard, accounts, invoices, assistant, login)
+    routes/                     Route config + RequireAuth
+    store/                      RTK Query API slices
 ```
 
-### Layered Backend Design
+**Layering:** GraphQL resolvers stay thin. Services enforce rules and call repositories. Repositories own SQL. AI calls go through `llmClient` only.
 
-Resolvers delegate to services; services enforce business rules and call repositories. No business logic lives in resolvers.
+## Core Ledger
 
-### Double-Entry Ledger
+### Account types
 
-Every transaction creates balanced debit and credit entries. Account balances are **derived at query time** from the ledger entry log — no mutable balance column.
+| Type | Purpose |
+|------|---------|
+| `COMPANY_BANK` | Company cash (seeded as “Company Bank Account”) |
+| `VENDOR_PAYABLE` | Liability per vendor (“Accounts Payable — {name}”) |
+| `EXPENSE` | Accrual offset on send (seeded as “Transportation Expense”) |
 
-Balance formula: `credits − debits` per account.
+### Double-entry
 
-### Invoice Lifecycle
+Every posted transaction must balance: same currency, sum(debits) = sum(credits), amounts positive integers in **cents**.
+
+Typical flows:
+
+| Event | Debit | Credit |
+|-------|-------|--------|
+| Send invoice | EXPENSE | VENDOR_PAYABLE |
+| Apply payment | VENDOR_PAYABLE | COMPANY_BANK |
+| Refund / void | COMPANY_BANK | VENDOR_PAYABLE |
+
+### Balance derivation
+
+Balances are **never stored**. At query time:
 
 ```
-draft → sent → partially_paid → paid
-              ↘ overdue (when due date passes and unpaid)
+balanceCents = SUM(credits) − SUM(debits)
 ```
 
-- **Send invoice**: posts expense (debit) / vendor liability (credit) to the ledger
-- **Apply payment**: debit vendor payable, credit company bank — with idempotency key and overpayment guard
-- **Download PDF**: `GET /invoices/:id/pdf` — vendor bill with line items and payment summary
+per account (`AccountRepository.getBalanceCents`).
 
-### Account Model
+### Integrity check
 
-- One **Company Bank Account** (`COMPANY_BANK`) — seeded at startup
-- One **vendor payable account** per vendor (`VENDOR_PAYABLE`) — auto-created when a vendor is added
-- Invoices reference `vendorId`; payments always flow between that vendor's payable account and the company bank
+- GraphQL query: `ledgerIntegrity`
+- Compares total debits vs credits **per currency**
+- UI: Dashboard **Ledger Integrity** widget (`LedgerIntegrityWidget`)
 
-### Concurrency & Idempotency
+## Invoice Lifecycle
 
-- Payment `idempotency_key` is unique in the database; duplicate requests return the existing payment (no-op)
-- `applyPayment` runs inside a database transaction with a re-check inside the lock
-- Reversals also use idempotency keys
+Statuses: `draft` | `sent` | `partially_paid` | `paid` | `overdue`
 
-### Overdue Job
+```
+createInvoice  → draft
+sendInvoice    → draft → sent   (+ email PDF, then ledger post)
+applyPayment   → sent|partially_paid|overdue → partially_paid | paid
+markOverdue    → sent|partially_paid (past due, remaining > 0) → overdue
+reversePayment → paid|partially_paid → partially_paid | sent
+                 (preserves overdue when still fully unpaid)
+```
+
+Rules enforced in services:
+
+- Only **draft** invoices can be sent.
+- Payments allowed only for `sent`, `partially_paid`, `overdue`.
+- Invoice **number** is unique (`invoice_number` UNIQUE).
+- Status after pay/refund is recomputed from remaining balance (`resolveStatusFromPayment`).
+
+PDF download: `GET /invoices/:id/pdf` with `Authorization: Bearer <token>`.
+
+## Payments & Idempotency
+
+### Why these exist
+
+- **Idempotency** — retries (network blips, double-clicks) must not double-pay.
+- **Concurrency control** — two simultaneous payments must not overshoot remaining balance.
+- **Overpayment guard** — payments larger than remaining balance are rejected before write.
+
+### Mechanism
+
+- Column / field: `payments.idempotency_key` (**UNIQUE**).
+- Duplicate key → return the existing payment (no second ledger entry).
+- `applyPayment` runs inside `runInTransaction`.
+  - Postgres: invoice row locked with `SELECT … FOR UPDATE`.
+  - SQLite: serialized queue + `BEGIN IMMEDIATE` (no `FOR UPDATE`).
+- Remaining balance is re-checked inside the lock after currency conversion.
+- Optional payment `currency` (`USD` | `INR`); conversion to invoice currency uses fixed rate in `currencyConfig` before the remaining check.
+- Overpay → `AppError` code `OVERPAYMENT`; no payment row created.
+
+## Refunds / Reversals
+
+- GraphQL: `reversePayment` with `reversalType`: `refund` | `void`.
+- Accounting entries are the same for both; they differ by `reversal_type` label / audit value.
+- Reverses the **full remaining net amount of that payment** (payment converted amount minus prior reversals). There is **no amount input** — partial reverse of a single payment is not supported.
+- `reversals.idempotency_key` is UNIQUE; duplicates return the existing reversal.
+- Original payment row and original ledger transaction are kept (append-only audit).
+
+## Overdue Automation
+
+Marks `sent` / `partially_paid` invoices with `due_date` before the as-of date and remaining balance &gt; 0 as `overdue`.
 
 ```bash
 cd server
 npm run job:overdue
+# optional as-of date:
+npm run job:overdue -- 2026-07-15
 ```
 
-Also triggerable via GraphQL mutation `markOverdueInvoices` or the "Run Overdue Job" button in the UI.
+Also:
 
-## Authentication & roles (Tier 0)
+- GraphQL mutation `markOverdueInvoices(asOfDate: String): [Invoice!]!` (**APPROVER**)
+- Invoices page button **Run Overdue Job** (**APPROVER** only)
 
-The GraphQL API and PDF download route require a JWT issued by the `login` mutation. Pass it as `Authorization: Bearer <token>` on every request.
+There is no background cron in-process; schedule the CLI externally if needed.
+
+## Authentication & Roles (Tier 0)
+
+All GraphQL operations except `login` require `Authorization: Bearer <JWT>`. PDF download requires the same.
+
+JWT payload claims: `sub` (user id), `email`, `role`. Signed with `JWT_SECRET`. Lifetime: `JWT_EXPIRES_IN` (default `8h`).
 
 | Role | Access |
 |------|--------|
-| `VIEWER` | Read invoices, vendors, accounts, ledger integrity |
-| `APPROVER` | Everything VIEWER can do, plus all mutations (create invoices, send, pay, reverse, mark overdue, create vendors/accounts) |
+| `VIEWER` | Read queries (`me`, invoices, vendors, accounts, ledger integrity, AI advisory queries) |
+| `APPROVER` | Everything VIEWER can do, plus all mutations |
 
-Create users with:
+Server enforcement: `requireAuth` / `requireApprover` in resolvers (`withAuth` / `withApprover` wrappers).
+
+Create users (no public register):
 
 ```bash
 cd server
@@ -126,117 +224,155 @@ npm run db:create-user -- admin@example.com 'strong-password' APPROVER
 npm run db:create-user -- viewer@example.com 'strong-password' VIEWER
 ```
 
-Passwords are bcrypt-hashed; never stored or logged in plain text. Set `JWT_SECRET` in the server environment (required). Optional: `JWT_EXPIRES_IN` (default `8h`).
+Passwords are bcrypt-hashed. Role defaults to **APPROVER** if omitted.
 
-**Behavior change:** previously open GraphQL operations now return `UNAUTHENTICATED` without a valid token. Mutation attempts by `VIEWER` return `FORBIDDEN`.
+Unauthenticated calls → `UNAUTHENTICATED`. VIEWER mutations → `FORBIDDEN`.
 
-## AI compliance review (Tier 1)
+## AI Compliance & Anomaly Review (Tier 1)
 
-Before applying a payment, the invoice detail page runs a **read-only** AI compliance review (`paymentComplianceReview` query).
+**Principle: AI advises, human decides.** The review never applies a payment, never changes invoice status, and never writes to the ledger.
 
-- Principle: **AI advises, human decides.** The review never applies a payment, never changes invoice status, and never writes to the ledger.
-- The Apply Payment button stays fully enabled even if the review is loading, failed, or unavailable.
-- Set `GEMINI_API_KEY` in the server environment (see `.env.example`). Without it, the API returns `available: false` with a clear message fallback instead of blocking the flow.
-- All Gemini calls go through a shared `server/src/llm/llmClient.ts` module that tests can mock.
+- Query: `paymentComplianceReview(invoiceId: ID!, pendingPaymentAmountCents: Int): ComplianceReview!`
+- Used on the invoice detail **Apply Payment** flow; the pay button stays enabled regardless of review state.
+- Flag types: `DUPLICATE_INVOICE`, `AMOUNT_ANOMALY`, `DATE_MISMATCH`, `VELOCITY_ANOMALY`, `OTHER`
+- Severities: `info`, `low`, `medium`, `high`
+- Requires `GEMINI_API_KEY` (via shared `llmClient`). If missing or the call fails → `available: false`, empty `flags`, message like `AI review unavailable: …`.
 
-## Ledger assistant (Tier 2)
+## Natural-Language Ledger Assistant (Tier 2)
 
-Authenticated users (VIEWER or APPROVER) can open **Assistant** in the sidebar and ask plain-English questions via `askLedgerAssistant(question)`.
+- Query: `askLedgerAssistant(question: String!): LedgerAssistantAnswer!`
+- UI: `/assistant`
 
-**Safety constraints:**
-- The LLM never generates or executes SQL.
-- It may only select from a fixed set of parameterized read operations:
-  - `getVendorBalance` — how much is owed to a vendor
-  - `getOverdueInvoices` — overdue invoices, optional minimum remaining amount
-  - `getInvoicesByStatus` — invoices filtered by status
-  - `getVendorInvoices` — invoices for a vendor
-- Unsupported or adversarial prompts (delete/update/pay) return a clear “I can’t answer that yet” style response and **cannot mutate** ledger or invoice state.
+The LLM **never generates or runs SQL**. It may only choose from this fixed set:
 
-Example questions:
+| Operation | Meaning |
+|-----------|---------|
+| `getVendorBalance` | Amount owed to a vendor |
+| `getOverdueInvoices` | Overdue invoices (optional minimum remaining) |
+| `getInvoicesByStatus` | Invoices filtered by status |
+| `getVendorInvoices` | Invoices for a vendor |
+| `unsupported` | Anything else (including writes) |
+
+Example supported questions:
+
 - “How much do we owe Metro Logistics?”
 - “Show overdue invoices over $5,000”
 - “List all sent invoices”
+- “Show invoices for Raj Transport”
 
-## Invoice document intelligence (Tier 3 — experimental)
+Example unsupported / adversarial: “Please delete all invoices and pay everyone.” → `answered: false`, `operation: unsupported`, **no state change**.
 
-On **Create Invoice**, you can paste invoice text or upload a text, PDF, or image file (PNG/JPEG/WebP). The `extractInvoiceFromDocument` query returns a **draft only** (vendor name, invoice number, due date, currency, line items).
+## Invoice Document Intelligence (Tier 3 — experimental)
 
-- Best-effort extraction; missing fields are reported explicitly for manual entry.
-- Existing vendors are matched by name into `matchedVendorId` when possible.
-- **Nothing is written to the database** until a human reviews the form and submits via the existing `createInvoice` mutation (auth/validation unchanged).
-- Reuses the shared `llmClient` (supports text, PDF, and image base64 parts).
+- Query: `extractInvoiceFromDocument(documentText, documentBase64, mimeType): InvoiceExtractionDraft!`
+- UI: **Create Invoice** → paste text or upload file
 
-### Final AI safety confirmation
+**Supported inputs**
 
-All LLM-touching resolvers/services (`paymentComplianceReview`, `askLedgerAssistant`, `extractInvoiceFromDocument`, plus `llmClient`) are **read-only advisory paths**. None of them, directly or indirectly:
+| Client | Server `mimeType` for binary |
+|--------|------------------------------|
+| Plain text (`.txt` / text) | (as `documentText`) |
+| PDF | `application/pdf` |
+| PNG / JPEG / WebP | `image/png`, `image/jpeg`, `image/webp` |
+
+**Draft fields:** `vendorName`, `matchedVendorId`, `invoiceNumber`, `dueDate`, `currency`, `lineItems` (description / quantity / unitPriceCents / confidence), plus `missingFields` and `aiFilledFields`.
+
+- Vendor match: exact case-insensitive name, else first partial `includes` match — **read-only** (does not create vendors).
+- Uncertain fields land in `missingFields` for manual entry.
+- **Nothing is written to the database** until a human submits `createInvoice` (or `createVendor` when typing a new vendor name on the form).
+
+## AI Safety Summary
+
+These endpoints/services are **read-only advisory** paths:
+
+| GraphQL | Service |
+|---------|---------|
+| `paymentComplianceReview` | `ComplianceReviewService` |
+| `askLedgerAssistant` | `LedgerAssistantService` |
+| `extractInvoiceFromDocument` | `InvoiceExtractionService` |
+
+Shared client: `server/src/llm/llmClient.ts`.
+
+None of them, directly or indirectly:
 
 - execute a payment
 - alter invoice status
 - write ledger entries
 - run arbitrary / non-parameterized SQL
 
-Financial mutations remain human-triggered through existing permission-checked mutations only.
+Financial mutations remain human-triggered, APPROVER-gated GraphQL mutations only (`createInvoice`, `sendInvoice`, `applyPayment`, `reversePayment`, etc.).
+
+## Invoice Email (Send Invoice)
+
+`sendInvoice(invoiceId, vendorEmail)`:
+
+1. Saves vendor contact email  
+2. Generates invoice PDF  
+3. Sends email (PDF attached)  
+4. **Only if email step succeeds** → posts ledger entry and sets status `sent`
+
+### SMTP setup
+
+Add to `server/.env` (and Render env in production):
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=you@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM="TMS Payables <you@gmail.com>"
+```
+
+Restart the server, open a **draft** invoice → **Send Invoice** → enter vendor email.
+
+### Fallback / failure
+
+| Condition | Behavior |
+|-----------|----------|
+| SMTP env incomplete | Email logged to console as `[email:console] …` and treated as success → invoice **is** posted |
+| SMTP configured but send fails | Error returned; invoice **stays `draft`**; no ledger post |
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8266` | Backend server port |
-| `JWT_SECRET` | — | **Required.** Secret used to sign/verify JWTs |
-| `JWT_EXPIRES_IN` | `8h` | JWT lifetime (e.g. `1h`, `12h`, `7d`) |
-| `GEMINI_API_KEY` | — | Optional. Enables AI compliance, assistant, and invoice extraction |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Optional Gemini model override |
-| `DATABASE_PATH` | `./data/ledger.db` | SQLite file (local dev only — **data is lost on redeploy**) |
-| `DATABASE_URL` | — | **PostgreSQL connection string (Supabase) — use in production for persistent data** |
-| `VITE_GRAPHQL_URL` | `/graphql` | Frontend GraphQL endpoint |
+### Server (`server/.env`)
 
-### Persistent database with Supabase (recommended for deploy)
+| Variable | Default | Required? | Description |
+|----------|---------|-----------|-------------|
+| `PORT` | `8266` | No | HTTP listen port (`.env.example` sample uses `4001`; runtime falls back to `8266`) |
+| `JWT_SECRET` | — | **Yes** | Signs/verifies JWTs |
+| `JWT_EXPIRES_IN` | `8h` | No | Token lifetime (`1h`, `12h`, `7d`, …) |
+| `GEMINI_API_KEY` | — | No | Enables Tier 1–3 AI; without it, AI paths degrade gracefully |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | No | Gemini model override |
+| `SMTP_HOST` | — | No* | SMTP host (*required with user/pass for real email) |
+| `SMTP_PORT` | `587` | No | SMTP port |
+| `SMTP_SECURE` | `false` (or true if port `465`) | No | Force TLS |
+| `SMTP_USER` | — | No* | SMTP username |
+| `SMTP_PASS` | — | No* | SMTP password / app password |
+| `SMTP_FROM` | `SMTP_USER` | No | From header |
+| `DATABASE_URL` | — | Prod: **Yes** | Postgres URL (Supabase). If set, SQLite is not used |
+| `DATABASE_PATH` | `./data/ledger.db` | No | SQLite file path when `DATABASE_URL` unset |
+| `DATABASE_SSL` | auto for `supabase.co` hosts | No | Set `true` to force SSL |
+| `DATABASE_POOL_SIZE` | `10` | No | Postgres pool max |
 
-SQLite stores data in a local file. On Render, Railway, Vercel, and similar hosts, that file is **wiped on every redeploy**. To keep your invoices, vendors, and payments:
+### Client (`client/.env`)
 
-1. Create a project at [supabase.com](https://supabase.com)
-2. In Supabase, click **Connect**
-3. Choose **ORM** or **Connection string**
-4. Copy the `DATABASE_URL` URI (use the transaction pooler on Render)
-5. Add to your deployed backend environment:
-   ```
-   DATABASE_URL=postgresql://postgres.[ref]:[password]@...pooler.supabase.com:6543/postgres?pgbouncer=true
-   ```
-6. Redeploy the backend. Tables are created automatically on startup, and data persists across deploys.
+| Variable | Default | Required? | Description |
+|----------|---------|-----------|-------------|
+| `VITE_GRAPHQL_URL` | `/graphql` | Prod build: **Yes** | Absolute GraphQL URL for Vercel (must end with `/graphql`) |
 
-On Render, set `DATABASE_URL` in the backend service environment variables. On Vercel, set `VITE_GRAPHQL_URL` in the frontend project environment variables.
+## Frontend screens
 
-For local dev without Supabase, omit `DATABASE_URL` and the app uses SQLite as before.
+| Route | Screen |
+|-------|--------|
+| `/login` | Login |
+| `/` | Dashboard (overview + ledger integrity) |
+| `/accounts` | Accounts list |
+| `/accounts/:accountId` | Account statement |
+| `/invoices` | Invoice list (+ create dialog, overdue job) |
+| `/invoices/:invoiceId` | Invoice detail (send, pay, compliance, refund/void, PDF) |
+| `/assistant` | Ledger assistant chat |
 
-## What Was Prioritized
-
-1. Correct double-entry accounting with derived balances and integrity check
-2. Invoice status lifecycle with overdue automation
-3. Idempotent, concurrency-safe payment application
-4. Reversal-based refund/void with audit trail preservation
-5. Full frontend with RTK Query, loading/error/empty states, MUI consistency
-
-## Intentionally Left Out
-
-- Multi-tenancy (single shared ledger/tenant)
-- Partial refunds (reversals reverse the full remaining net amount of a payment)
-
-## Invoice email (Send Invoice)
-
-`sendInvoice` emails the vendor a PDF attachment, then posts the draft invoice to the ledger.
-
-1. Add SMTP settings to `server/.env` (see `.env.example`):
-   ```
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USER=you@gmail.com
-   SMTP_PASS=your-app-password
-   SMTP_FROM="TMS Payables <you@gmail.com>"
-   ```
-2. Restart the server.
-3. Open an invoice → **Send Invoice** → enter the vendor email.
-
-Without SMTP configured, the server logs the outbound message to the console and still completes the send (handy for local demos). If SMTP is configured and delivery fails, the invoice stays `draft` and is not posted.
 ## Testing
 
 ```bash
@@ -244,22 +380,94 @@ cd server
 npm test
 ```
 
-The backend test suite covers ledger integrity, invoice lifecycle, payments, refunds, concurrency, idempotency, currency conversion, authentication/authorization, AI compliance review, the natural-language ledger assistant, and invoice document extraction (mocked LLM — no live Gemini calls).
+**70 tests** across these suites (all use mocked LLM; no live Gemini):
 
-## Known Limitations
+| Suite | Focus |
+|-------|--------|
+| `ledger.test.ts` | Balanced entries, derived balances, integer cents |
+| `invoice.test.ts` | Totals, draft/send, email PDF mock, email-fail keeps draft, unique number, overdue |
+| `payment.test.ts` | Partial/full pay, overpayment, idempotency |
+| `refund.test.ts` | Full net reverse, status recovery, idempotent reversals |
+| `concurrency.test.ts` | Parallel payments / idempotency races |
+| `currency.test.ts` | USD ↔ INR conversion on pay |
+| `auth.test.ts` | Login, JWT, VIEWER forbidden / APPROVER allowed |
+| `compliance.test.ts` | Prompt/flags, LLM failure fallback, read-only proof |
+| `assistant.test.ts` | Safe ops mapping, adversarial unsupported, no writes |
+| `extraction.test.ts` | Draft parse, no DB write, auth unchanged for createInvoice |
 
-- SQLite is used for local dev when `DATABASE_URL` is unset; production should set `DATABASE_URL` to Supabase Postgres
-- Invoice posting uses a simplified 2-entry journal (expense + vendor) rather than a full AP sub-ledger with control account reconciliation
-- The overdue job is manual/cron-triggered, not a background scheduler
-- No pagination on list queries
+**Not covered / known gaps**
+
+- No client unit or E2E suite
+- No live Gemini or live SMTP integration tests
+- Reverse-payment concurrency is not covered like `applyPayment`
+
+## What Was Prioritized
+
+1. Correct double-entry accounting with derived balances and integrity check  
+2. Invoice lifecycle with overdue automation  
+3. Idempotent, concurrency-safe payment application  
+4. Reversal-based refund/void with preserved audit trail  
+5. Auth + role enforcement (Tier 0)  
+6. AI advisory layer (Tiers 1–3) behind a shared mockable `llmClient`  
+7. Invoice PDF download + SMTP/console email on send  
+8. Full frontend with RTK Query, loading/error/empty states, MUI shell  
+
+## Intentionally Left Out / Known Limitations
+
+- Multi-tenancy (single shared ledger)
+- Partial refund of an arbitrary amount within one payment (only full remaining net per payment)
+- Background overdue scheduler (CLI / manual / GraphQL / UI only)
+- List pagination
+- Public self-service registration
+- DB-enforced debit=credit constraints at the schema level (app-layer validation only)
+- Stored balance snapshots / formal bank reconciliation job
+- Separate refined idempotency-key table beyond UNIQUE columns on `payments` / `reversals`
+- Unified product naming on every surface (Payables vs Accounts Payable vs repo title)
+- Client automated tests
+- Live provider tests for Gemini/SMTP
+
+Invoice posting uses a simplified two-line journal (expense + vendor payable), not a full AP control-account reconciliation model.
+
+## Future Scope
+
+Possible hardening (not implemented):
+
+- Database-level balanced-entry constraints
+- Balance snapshots and an explicit reconciliation job
+- Dedicated idempotency-key storage with TTL / request hashing
+- Partial refund amounts with clearer UX
+- Pagination and background overdue scheduling
+- Align branding strings (UI, HTML title, PDF, email) to one name
 
 ## Seeded Data
 
-After `npm run db:seed`:
+After `npm run db:seed` (and on empty DB startup via `seedIfEmpty`):
 
 | Item | Details |
 |------|---------|
-| Company Bank Account | `COMPANY_BANK` — single system cash account |
-| Transportation Expense | `EXPENSE` — invoice accrual offset |
-| Raj Transport | Vendor with dedicated `VENDOR_PAYABLE` account |
-| Metro Logistics LLC | Vendor with dedicated `VENDOR_PAYABLE` account |
+| Company Bank Account | `COMPANY_BANK` |
+| Transportation Expense | `EXPENSE` |
+| Raj Transport | Vendor + `VENDOR_PAYABLE` account |
+| Metro Logistics LLC | Vendor + `VENDOR_PAYABLE`; contact `dispatch@metro.example` |
+| Users | **None** — use `npm run db:create-user` |
+
+## Persistent database (Supabase)
+
+SQLite files on Render are wiped on redeploy. For durable production data:
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. **Connect** → connection string (transaction pooler for Render)
+3. Set on the Render service:
+
+```env
+DATABASE_URL=postgresql://postgres.[ref]:[password]@...pooler.supabase.com:6543/postgres?pgbouncer=true
+JWT_SECRET=<long-random-secret>
+```
+
+4. Redeploy. Migrations run on startup.
+
+On Vercel, set:
+
+```env
+VITE_GRAPHQL_URL=https://mini-payment-ledger-invoice-service-1.onrender.com/graphql
+```

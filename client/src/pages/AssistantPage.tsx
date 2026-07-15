@@ -174,10 +174,17 @@ export function AssistantPage() {
           placeholder="e.g. How much do we owe Metro Logistics?"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void handleSubmit();
+            }
+          }}
           fullWidth
           multiline
           minRows={2}
           disabled={isLoading}
+          helperText="Press Enter to ask · Shift+Enter for a new line"
         />
         <Button
           type="submit"

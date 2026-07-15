@@ -29,7 +29,7 @@ export const EXTRACTION_RESPONSE_SCHEMA: JsonSchema = {
     vendorName: { type: 'STRING' },
     invoiceNumber: { type: 'STRING' },
     dueDate: { type: 'STRING' },
-    currency: { type: 'STRING', enum: ['USD', 'INR', ''] },
+    currency: { type: 'STRING', enum: ['USD', 'INR', 'UNKNOWN'] },
     lineItems: {
       type: 'ARRAY',
       items: {
@@ -77,6 +77,7 @@ function normalizeCurrency(value: unknown): CurrencyCode | null {
   if (typeof value !== 'string') return null;
   const upper = value.trim().toUpperCase();
   if (upper === 'USD' || upper === 'INR') return upper;
+  // UNKNOWN / empty / unsupported currencies become null for manual entry
   return null;
 }
 
@@ -102,10 +103,10 @@ export function buildExtractionPrompt(): string {
     '- vendorName: vendor / supplier name',
     '- invoiceNumber: invoice / bill number',
     '- dueDate: ISO date YYYY-MM-DD when possible',
-    '- currency: USD or INR only; empty string if unknown',
+    '- currency: USD, INR, or UNKNOWN if not clear',
     '- lineItems: array of { description, quantity, unitPriceCents }',
-    'unitPriceCents must be integer cents (e.g. $12.34 -> 1234).',
-    'If a field is unknown, use an empty string / 0 / empty array rather than guessing.',
+    'unitPriceCents must be integer minor units (e.g. $12.34 -> 1234).',
+    'If a field is unknown, use an empty string / 0 / empty array / UNKNOWN rather than guessing.',
     'Prefer fewer accurate line items over invented ones.',
   ].join('\n');
 }
@@ -278,7 +279,11 @@ export class InvoiceExtractionService {
         throw error;
       }
       if (error instanceof LlmClientError) {
-        return emptyDraft(`Invoice extraction unavailable: ${error.message}`);
+        const hint =
+          error.code === 'API_ERROR'
+            ? ' Try a smaller PDF, or paste the invoice text instead.'
+            : '';
+        return emptyDraft(`Invoice extraction unavailable: ${error.message}.${hint}`);
       }
       return emptyDraft('Invoice extraction unavailable due to an unexpected error.');
     }

@@ -30,6 +30,17 @@ export class LlmClientError extends Error {
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+function summarizeGeminiError(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as {
+      error?: { message?: string; status?: string };
+    };
+    return parsed.error?.message?.trim() || '';
+  } catch {
+    return raw.trim().slice(0, 180);
+  }
+}
+
 function getApiKey(): string {
   return process.env.GEMINI_API_KEY?.trim() ?? '';
 }
@@ -47,15 +58,18 @@ async function callGeminiApi(options: LlmGenerateOptions): Promise<unknown> {
     );
   }
 
-  const parts: Array<Record<string, unknown>> = [{ text: options.prompt }];
+  // Gemini docs: put media parts before the text instruction for document/PDF inputs.
+  const parts: Array<Record<string, unknown>> = [];
   for (const item of options.inlineData ?? []) {
+    const data = item.dataBase64.replace(/\s/g, '').replace(/^data:[^;]+;base64,/, '');
     parts.push({
       inline_data: {
         mime_type: item.mimeType,
-        data: item.dataBase64,
+        data,
       },
     });
   }
+  parts.push({ text: options.prompt });
 
   const generationConfig: Record<string, unknown> = {
     temperature: options.temperature ?? 0.2,
@@ -92,10 +106,14 @@ async function callGeminiApi(options: LlmGenerateOptions): Promise<unknown> {
       } catch {
         detail = '';
       }
+      const shortDetail = summarizeGeminiError(detail);
+      console.error('Gemini API error:', response.status, detail.slice(0, 800));
       throw new LlmClientError(
         'API_ERROR',
-        `Gemini API request failed (${response.status}).`,
-        detail.slice(0, 300)
+        shortDetail
+          ? `Gemini API request failed (${response.status}): ${shortDetail}`
+          : `Gemini API request failed (${response.status}).`,
+        detail.slice(0, 500)
       );
     }
 

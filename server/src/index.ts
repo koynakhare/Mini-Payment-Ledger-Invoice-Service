@@ -34,7 +34,8 @@ async function startServer(): Promise<void> {
 
   app.use(
     '/graphql',
-    express.json(),
+    // Allow PDF/image base64 payloads for invoice extraction (default express limit is too small).
+    express.json({ limit: '20mb' }),
     expressMiddleware(server, {
       context: async ({ req }) => buildGraphQLContext({ req }),
     })

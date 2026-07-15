@@ -26,6 +26,7 @@ export class EmailClientError extends Error {
   ) {
     super(message);
     this.name = 'EmailClientError';
+    this.code = code;
   }
 }
 
